@@ -142,6 +142,7 @@ object CoachPrompt {
             appendLine("Rédige d'abord tes explications et conseils en texte lisible.")
             appendLine("Puis termine par UN SEUL bloc ```json (sans commentaire à l'intérieur) qui respecte exactement ce schéma :")
             appendLine(if (run) RUN_SCHEMA else SCHEMA)
+            appendLine("Écris le JSON de façon COMPACTE (une séance par ligne, sans indentation) pour qu'il ne soit pas coupé.")
             appendLine("Le bloc JSON doit contenir toutes les séances de toutes les semaines (week = numéro de semaine, day = jour suggéré).")
             appendLine(
                 if (run) "duration_sec est en secondes, distance_m en mètres (ou null). mode vaut PACE, HR_ZONE ou FREE. target est un nombre."
@@ -198,6 +199,7 @@ object CoachPrompt {
             appendLine("## Format de réponse OBLIGATOIRE")
             appendLine("Rédige d'abord tes explications, puis termine par UN SEUL bloc ```json (sans commentaire à l'intérieur) respectant ce schéma :")
             appendLine(GLOBAL_SCHEMA)
+            appendLine("Écris le JSON de façon COMPACTE (une séance par ligne, sans indentation) pour qu'il ne soit pas coupé.")
             appendLine("sport vaut ELLIPTICAL ou RUNNING. duration_sec en secondes, distance_m en mètres (course uniquement, sinon null). target est un nombre.")
         }
     }

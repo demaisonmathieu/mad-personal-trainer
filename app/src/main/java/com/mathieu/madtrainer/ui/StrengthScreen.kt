@@ -132,7 +132,16 @@ fun StrengthSection(vm: AppViewModel) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Text("  Préparation du programme (1 à 3 min)…")
                     }
-                    is CoachState.Done -> Text("Programme importé : ${c.workouts} séances", fontWeight = FontWeight.SemiBold)
+                    is CoachState.Done -> Column {
+                        Text("Programme importé : ${c.workouts} séances", fontWeight = FontWeight.SemiBold)
+                        if (c.truncated) {
+                            Text(
+                                "Réponse coupée : seules les séances complètes ont été importées.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                     is CoachState.Error -> Text(c.message, color = MaterialTheme.colorScheme.error)
                     CoachState.Idle -> Unit
                 }

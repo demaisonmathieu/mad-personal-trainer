@@ -55,7 +55,8 @@ import kotlinx.coroutines.launch
 sealed interface CoachState {
     data object Idle : CoachState
     data object Generating : CoachState
-    data class Done(val workouts: Int) : CoachState
+    /** [truncated] : réponse coupée, seules les séances complètes ont été importées. */
+    data class Done(val workouts: Int, val truncated: Boolean = false) : CoachState
     data class Error(val message: String) : CoachState
 }
 
@@ -221,12 +222,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Importe la réponse de l'IA (collée ou reçue de l'API) : plan + séances dans Programmes. */
     fun importCoachResponse(response: String) {
         val eq = equipment()
-        CoachParser.parse(response).fold(
-            onSuccess = { plan ->
+        CoachParser.parseDetailed(response).fold(
+            onSuccess = { parsed ->
+                val plan = parsed.value
                 val workouts = CoachParser.toGlobalWorkouts(plan, eq.resistanceMin, eq.resistanceMax)
                 viewModelScope.launch {
                     repo.saveGlobalPlan(SavedPlan(System.currentTimeMillis(), plan, response), workouts)
-                    _coach.value = CoachState.Done(workouts.size)
+                    _coach.value = CoachState.Done(workouts.size, parsed.truncated)
                 }
             },
             onFailure = { _coach.value = CoachState.Error(it.message ?: "Réponse illisible") },
@@ -269,11 +271,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun importStrengthResponse(response: String) {
-        StrengthPrompt.parse(response).fold(
-            onSuccess = { plan ->
+        StrengthPrompt.parseDetailed(response).fold(
+            onSuccess = { parsed ->
+                val plan = parsed.value
                 viewModelScope.launch {
                     repo.saveStrengthPlan(SavedStrengthPlan(System.currentTimeMillis(), plan, response))
-                    _strengthCoach.value = CoachState.Done(plan.sessions.size)
+                    _strengthCoach.value = CoachState.Done(plan.sessions.size, parsed.truncated)
                 }
             },
             onFailure = { _strengthCoach.value = CoachState.Error(it.message ?: "Réponse illisible") },
@@ -377,6 +380,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------ running
 
     fun setSport(s: Sport) = settingsStore.update { it.copy(sport = s) }
+
+    /** « Ma semaine » : reporter (+1) ou avancer (-1) tout le plan d'une semaine. */
+    fun shiftPlans(weeks: Int) = viewModelScope.launch { repo.shiftPlans(weeks) }
+
+    /** Déplace une séance cardio du plan vers un autre jour (et éventuellement une autre semaine). */
+    fun moveWorkout(w: Workout, day: String, week: Int? = null) =
+        saveWorkout(w.copy(planDay = day, planWeek = week ?: w.planWeek))
+
+    fun updateStrengthSession(index: Int, s: StrengthSession) = viewModelScope.launch { repo.updateStrengthSession(index, s) }
 
     /** « Ma semaine » : cocher / décocher une séance du plan. */
     fun setDone(key: String, done: Boolean) = viewModelScope.launch { repo.setDone(key, done) }

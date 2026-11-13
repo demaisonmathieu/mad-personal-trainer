@@ -109,6 +109,31 @@ class Repository(context: Context) {
         _globalPlan.value = saved
     }
 
+    /** Décale le plan commun et le plan de renfo de [weeks] semaines (positif = reporter). */
+    suspend fun shiftPlans(weeks: Int) = withContext(Dispatchers.IO) {
+        val delta = weeks * 7L * 24 * 3600 * 1000
+        _globalPlan.value?.let { p ->
+            val n = p.copy(createdAt = p.createdAt + delta)
+            globalPlanFile.writeText(json.encodeToString(SavedPlan.serializer(), n))
+            _globalPlan.value = n
+        }
+        _strengthPlan.value?.let { p ->
+            val n = p.copy(createdAt = p.createdAt + delta)
+            strengthPlanFile.writeText(json.encodeToString(SavedStrengthPlan.serializer(), n))
+            _strengthPlan.value = n
+        }
+    }
+
+    /** Remplace la séance n° [index] du plan de renfo (jour, exercices…). */
+    suspend fun updateStrengthSession(index: Int, session: com.mathieu.madtrainer.coach.StrengthSession) = withContext(Dispatchers.IO) {
+        val p = _strengthPlan.value ?: return@withContext
+        if (index !in p.plan.sessions.indices) return@withContext
+        val sessions = p.plan.sessions.toMutableList().also { it[index] = session }
+        val n = p.copy(plan = p.plan.copy(sessions = sessions))
+        strengthPlanFile.writeText(json.encodeToString(SavedStrengthPlan.serializer(), n))
+        _strengthPlan.value = n
+    }
+
     suspend fun setDone(id: String, done: Boolean) = withContext(Dispatchers.IO) {
         val set = if (done) _done.value + id else _done.value - id
         doneFile.writeText(json.encodeToString(ListSerializer(String.serializer()), set.toList()))

@@ -93,6 +93,7 @@ object StrengthPrompt {
         appendLine("## Format de réponse OBLIGATOIRE")
         appendLine("Rédige d'abord tes explications en texte lisible, puis termine par UN SEUL bloc ```json (sans commentaire à l'intérieur) respectant exactement ce schéma :")
         appendLine(SCHEMA)
+        appendLine("Écris le JSON de façon COMPACTE (une séance par ligne, sans indentation) pour qu'il ne soit pas coupé.")
         appendLine("reps OU duration_sec doit être renseigné (l'autre à null). rest_sec en secondes. per_side = true si l'exercice se fait de chaque côté.")
     }
 
@@ -127,9 +128,14 @@ object StrengthPrompt {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
-    fun parse(response: String): Result<StrengthPlan> = runCatching {
+    fun parse(response: String): Result<StrengthPlan> = parseDetailed(response).map { it.value }
+
+    fun parseDetailed(response: String): Result<CoachParser.Parsed<StrengthPlan>> = parseInner(response)
+
+    private fun parseInner(response: String): Result<CoachParser.Parsed<StrengthPlan>> = runCatching {
         val raw = CoachParser.extractJson(response) ?: error("Aucun bloc JSON trouvé dans la réponse")
-        val plan = json.decodeFromString(StrengthPlan.serializer(), raw)
+        val parsed = CoachParser.decodeWithRepair(raw) { json.decodeFromString(StrengthPlan.serializer(), it) }
+        val plan = parsed.value
         require(plan.sessions.any { it.exercises.isNotEmpty() }) { "Le programme ne contient aucun exercice" }
         // Bornes de sécurité sur les valeurs
         plan.copy(
@@ -145,6 +151,6 @@ object StrengthPrompt {
                     }.filter { it.name.isNotBlank() },
                 )
             }.filter { it.exercises.isNotEmpty() },
-        )
+        ).let { CoachParser.Parsed(it, parsed.truncated) }
     }
 }

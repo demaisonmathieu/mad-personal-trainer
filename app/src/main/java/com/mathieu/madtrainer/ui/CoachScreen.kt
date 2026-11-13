@@ -166,7 +166,17 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Text("  Claude prépare ton programme (1 à 3 min)…")
                     }
-                    is CoachState.Done -> Text("Plan importé : ${c.workouts} séances ajoutées dans Programmes", fontWeight = FontWeight.SemiBold)
+                    is CoachState.Done -> Column {
+                        Text("Plan importé : ${c.workouts} séances ajoutées dans Programmes", fontWeight = FontWeight.SemiBold)
+                        if (c.truncated) {
+                            Text(
+                                "La réponse de l'IA était coupée : seules les séances complètes ont été importées. " +
+                                    "Demande « continue » à l'IA et réimporte la réponse complète si besoin.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                     is CoachState.Error -> Text(c.message, color = MaterialTheme.colorScheme.error)
                     CoachState.Idle -> Unit
                 }

@@ -33,12 +33,17 @@ La première fois, Android demande d'autoriser MAD Personal Trainer à installer
 
 ## Ma semaine et plan commun
 
+> Import IA : si la réponse est coupée (trop longue), l'app récupère les séances complètes et signale la coupure ; via l'API, elle demande automatiquement la suite.
+
 - **Plan commun** : le coach génère **une seule semaine** qui répartit course et elliptique (plus des jours réservés au renfo). L'elliptique sert de récupération active, ou de solution quand l'impact de la course est déconseillé.
 - **Séances en zones cardio** : elles fonctionnent sur les deux sports.
   - En course : guidage vocal « accélère / ralentis ».
   - Sur l'elliptique : la résistance s'ajuste automatiquement toutes les 15 s pour rester dans la zone (cardio de la montre).
 - **Faire sur l'autre machine** (menu ⋮ d'un programme, ou ⇄ dans Ma semaine) : convertit la séance (résistance, watts ou allure → zones cardio) et la lance dans l'autre mode.
 - **Onglet Semaine** :
+  - **décaler tout le plan** d'une semaine (« Reporter d'1 sem. » / « Avancer d'1 sem. ») : cardio et renfo ensemble ;
+  - **appui long + glisser** une séance vers un autre jour, ou menu ⋮ → « Déplacer au … » / semaine suivante ou précédente ;
+  - **toucher une séance pour la modifier** : étapes cardio ou exercices de renfo (séries, reps/durée, repos, consignes), réordonnés par glisser-déposer avec la poignée ⋮⋮ ;
   - les séances du plan et du renfo, jour par jour, avec la coche « faite » (automatique quand la séance est enregistrée) et ▶ pour lancer directement dans le bon mode ;
   - un bilan prévu / fait ;
   - le réalisé de la semaine : minutes par sport, km, et temps par zone cardio tous sports confondus, avec le % passé en endurance facile.

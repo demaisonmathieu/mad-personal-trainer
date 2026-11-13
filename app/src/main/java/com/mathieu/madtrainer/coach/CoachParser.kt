@@ -33,11 +33,31 @@ object CoachParser {
         return if (start >= 0 && end > start) response.substring(start, end + 1) else null
     }
 
-    fun parse(response: String): Result<CoachPlan> = runCatching {
+    /** Résultat d'import : [truncated] = la réponse était coupée, seule la partie complète a été gardée. */
+    data class Parsed<T>(val value: T, val truncated: Boolean)
+
+    /** Décode le JSON ; s'il est tronqué (réponse d'IA coupée), répare en gardant les éléments complets. */
+    fun <T> decodeWithRepair(raw: String, decode: (String) -> T): Parsed<T> =
+        try {
+            Parsed(decode(raw), false)
+        } catch (e: Exception) {
+            val repaired = JsonRepair.repairTruncated(raw)
+            if (repaired == null || repaired == raw.trim()) {
+                throw IllegalStateException(
+                    "Réponse incomplète ou mal formée (${e.message?.take(80)}). " +
+                        "Si l'IA s'est arrêtée en cours de route, demande-lui « continue » et colle aussi la suite.",
+                )
+            }
+            Parsed(decode(repaired), true)
+        }
+
+    fun parse(response: String): Result<CoachPlan> = parseDetailed(response).map { it.value }
+
+    fun parseDetailed(response: String): Result<Parsed<CoachPlan>> = runCatching {
         val raw = extractJson(response) ?: error("Aucun bloc JSON trouvé dans la réponse")
-        val plan = json.decodeFromString(CoachPlan.serializer(), raw)
-        require(plan.workouts.isNotEmpty()) { "Le plan ne contient aucune séance" }
-        plan
+        val parsed = decodeWithRepair(raw) { json.decodeFromString(CoachPlan.serializer(), it) }
+        require(parsed.value.workouts.isNotEmpty()) { "Le plan ne contient aucune séance complète" }
+        parsed
     }
 
     /** Convertit les séances du plan en programmes exécutables (cibles bornées à la machine). */

@@ -2,6 +2,8 @@ package com.mathieu.madtrainer.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -171,7 +173,8 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel: () -> Unit) {
+internal fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel: () -> Unit) {
+    val reorder = rememberReorderState()
     var name by remember { mutableStateOf(initial.name) }
     var steps by remember { mutableStateOf(initial.steps) }
     var repeatCount by remember { mutableStateOf("4") }
@@ -182,7 +185,8 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
     }
 
     val run = initial.sport == Sport.RUNNING
-    val preview = initial.copy(name = name, steps = steps)
+    var day by remember { mutableStateOf(initial.planDay) }
+    val preview = initial.copy(name = name, steps = steps, planDay = day)
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -205,6 +209,25 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+        if (initial.planWeek != null) {
+            item {
+                Column {
+                    Text("Jour (semaine ${initial.planWeek} du plan)", style = MaterialTheme.typography.labelLarge)
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        com.mathieu.madtrainer.data.WeekPlanner.DAYS.forEach { d ->
+                            FilterChip(
+                                selected = com.mathieu.madtrainer.data.WeekPlanner.dayIndex(day) == com.mathieu.madtrainer.data.WeekPlanner.dayIndex(d),
+                                onClick = { day = d },
+                                label = { Text(d.take(3)) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -217,17 +240,12 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
             StepEditor(
                 index = i,
                 step = s,
-                isFirst = i == 0,
-                isLast = i == steps.lastIndex,
+                count = steps.size,
+                reorder = reorder,
                 running = run,
                 onChange = { update(i, it) },
                 onDelete = { steps = steps.toMutableList().also { l -> l.removeAt(i) } },
-                onMove = { delta ->
-                    val j = i + delta
-                    if (j in steps.indices) {
-                        steps = steps.toMutableList().also { l -> val t = l[i]; l[i] = l[j]; l[j] = t }
-                    }
-                },
+                onSwap = { a, b -> steps = steps.swapped(a, b) },
             )
         }
         item {
@@ -280,16 +298,18 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
 private fun StepEditor(
     index: Int,
     step: WorkoutStep,
-    isFirst: Boolean,
-    isLast: Boolean,
+    count: Int,
+    reorder: ReorderState,
     running: Boolean,
     onChange: (WorkoutStep) -> Unit,
     onDelete: () -> Unit,
-    onMove: (Int) -> Unit,
+    onSwap: (Int, Int) -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().reorderItem(reorder, index)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Appui long sur ⋮⋮ puis glisser pour changer l'ordre des étapes
+                DragHandle(reorder, index, count, onSwap)
                 Text("${index + 1}.", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(8.dp))
                 OutlinedTextField(
@@ -299,8 +319,6 @@ private fun StepEditor(
                     label = { Text("Nom de l'étape") },
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = { onMove(-1) }, enabled = !isFirst) { Icon(Icons.Filled.ArrowUpward, "Monter") }
-                IconButton(onClick = { onMove(1) }, enabled = !isLast) { Icon(Icons.Filled.ArrowDownward, "Descendre") }
                 IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Supprimer") }
             }
             val modes = if (running) {
@@ -379,7 +397,7 @@ private fun StepEditor(
 
 /** Champ numérique entier : la valeur est conservée en texte pendant la saisie. */
 @Composable
-private fun NumberField(label: String, value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun NumberField(label: String, value: Int, onValue: (Int) -> Unit, modifier: Modifier = Modifier) {
     var text by remember(value) { mutableStateOf(value.toString()) }
     OutlinedTextField(
         value = text,

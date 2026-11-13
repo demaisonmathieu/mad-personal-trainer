@@ -121,11 +121,36 @@ class DomyosLegacyTest {
         assertEquals(3, frames[1].bytes.size)
         val all = frames[0].bytes + frames[1].bytes
         assertEquals(5, all[10].toInt())
+        assertEquals(0xFF, all[17].toInt() and 0xFF) // sinon rejet silencieux par la console
+        // Checksum attendu pour le niveau 5 (somme des octets 0..21)
+        val init = com.mathieu.madtrainer.ble.DomyosLegacy.resistanceFrames(5)
+        assertEquals(0x91, init[1].bytes[2].toInt() and 0xFF)
         var sum = 0
         for (i in 0 until 22) sum += all[i].toInt() and 0xFF
         assertEquals(sum and 0xFF, all[22].toInt() and 0xFF)
         // bornage 1..15
         assertEquals(15, com.mathieu.madtrainer.ble.DomyosLegacy.resistanceFrames(40)[0].bytes[10].toInt())
+    }
+
+    @Test
+    fun commandAckFromRealLog() {
+        val d = com.mathieu.madtrainer.ble.DomyosLegacy
+        // Écho réel reçu de la console EL500 (journal du 13/11)
+        val ack = bytes(0xF0, 0xBD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x07, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01, 0xFF, 0xFF, 0xFF, 0x00)
+        assertEquals(7, d.parseCommandAck(ack))
+        assertNull(d.parseCommandAck(bytes(0xF0, 0xBC, 0xFF)))
+    }
+
+    @Test
+    fun realStatusFrame() {
+        val d = com.mathieu.madtrainer.ble.DomyosLegacy
+        // Trame réelle : 6,2 km/h, cadence 72, résistance 1
+        val p = "F0 BC FF FF 00 00 00 3E 00 48 00 00 00 00 01 00 01 00 00 00 3E FF 00 00 01 32"
+            .split(" ").map { it.toInt(16).toByte() }.toByteArray()
+        val st = d.parseStatus(p)!!
+        assertEquals(6.2, st.speedKmh, 0.001)
+        assertEquals(72, st.cadence)
+        assertEquals(1, st.resistance)
     }
 
     @Test

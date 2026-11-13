@@ -520,6 +520,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
 
     private fun onLegacyNotify(value: ByteArray) {
         if (value.size != 20) legacyAck?.complete(Unit)
+        DomyosLegacy.parseCommandAck(value)?.let { log("Console : résistance $it acceptée") }
         val packet = legacyAssembler.push(value) ?: return
         val st = DomyosLegacy.parseStatus(packet) ?: return
         val now = System.currentTimeMillis()

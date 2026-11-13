@@ -45,17 +45,28 @@ object DomyosLegacy {
         add(Frame(b(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xbd), true))
     }
 
-    /** Commande de résistance (1..15), découpée en 20 + 3 octets ; dernier octet = somme des précédents. */
+    /**
+     * Commande de résistance (1..15), découpée en 20 + 3 octets ; dernier octet = somme des précédents.
+     * Trame "F0 AD" : chaque octet est un paramètre, 0xFF = inchangé. L'octet 17 doit rester à 0xFF
+     * (la console Domyos-EL rejette la trame silencieusement s'il vaut 0x00 — constaté sur EL500).
+     * La console confirme par une trame "F0 BD" en écho.
+     */
     fun resistanceFrames(level: Int): List<Frame> {
         val w = b(
             0xf0, 0xad, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0xff, 0xff, 0xff, 0x00,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0xff, 0xff, 0xff, 0x00,
         )
         w[10] = level.coerceIn(MIN_RESISTANCE, MAX_RESISTANCE).toByte()
         var sum = 0
         for (i in 0 until 22) sum += w[i].toInt() and 0xFF
         w[22] = (sum and 0xFF).toByte()
         return listOf(Frame(w.copyOfRange(0, 20), true), Frame(w.copyOfRange(20, 23), true))
+    }
+
+    /** Écho "F0 BD" d'une commande "F0 AD" acceptée : renvoie le niveau de résistance confirmé, sinon null. */
+    fun parseCommandAck(p: ByteArray): Int? {
+        if (p.size < 12 || (p[0].toInt() and 0xFF) != 0xF0 || (p[1].toInt() and 0xFF) != 0xBD) return null
+        return (p[10].toInt() and 0xFF).takeIf { it in MIN_RESISTANCE..MAX_RESISTANCE }
     }
 
     data class Status(

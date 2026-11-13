@@ -31,6 +31,14 @@ Au démarrage, l'app interroge la dernière Release GitHub (le dépôt doit êtr
 
 La première fois, Android demande d'autoriser MAD Personal Trainer à installer des applis : active l'option, reviens dans l'app et appuie de nouveau sur **Installer**. Le bouton **Vérifier** (onglet Vélo, carte Application) relance la recherche à la main.
 
+## Cardio : montre ou ceinture
+
+L'onglet **Vélo** comporte une carte **Cardio (montre ou ceinture)**. Elle accepte tout appareil cardio Bluetooth standard : ceinture, ou montre en mode diffusion.
+
+**Amazfit Balance** : sur la montre, ouvre *Réglages > Fréquence cardiaque > Diffusion de la fréquence cardiaque* et active-la. Tu peux aussi l'activer depuis une séance d'entraînement. Ensuite, dans l'app, appuie sur *Rechercher* puis choisis la montre. Elle est mémorisée et l'app s'y reconnecte automatiquement au démarrage.
+
+Le cardio de la montre est prioritaire sur celui de la console. Il est enregistré dans l'historique et envoyé à l'écran de la console Domyos.
+
 ## Envoyer le journal Bluetooth
 
 Onglet **Vélo**, puis **Envoyer** à côté de « Journal Bluetooth », puis choisis **Drive** (compte Scalizer). Le fichier `mad-trainer-log-AAAAMMJJ-HHMMSS.txt` contient les services GATT de la console, les événements et toutes les trames brutes reçues et envoyées. C'est ce qu'il faut pour diagnostiquer le protocole.

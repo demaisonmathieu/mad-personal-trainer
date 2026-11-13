@@ -108,6 +108,16 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
 
     val isBluetoothEnabled: Boolean get() = adapter?.isEnabled == true
 
+    // --- Cardio externe (montre / ceinture) : prioritaire sur le cardio de la console
+    @Volatile private var externalHr: Int? = null
+
+    fun setExternalHeartRate(bpm: Int?) {
+        externalHr = bpm
+        if (bpm != null) _metrics.value = _metrics.value.copy(heartRate = bpm)
+    }
+
+    private fun withExternalHr(m: MachineData): MachineData = externalHr?.let { m.copy(heartRate = it) } ?: m
+
     // ---------------------------------------------------------------- utilitaires
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
@@ -570,7 +580,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
             resistanceRaw = st.resistance,
             powerW = power,
             totalKcal = st.kcal,
-            heartRate = st.heartRate,
+            heartRate = externalHr ?: st.heartRate,
             distanceM = legacyDistanceM.toInt(),
         )
     }
@@ -580,11 +590,11 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         when (uuid) {
             DomyosLegacy.NOTIFY -> onLegacyNotify(value)
             FtmsUuids.CROSS_TRAINER_DATA ->
-                _metrics.value = _metrics.value.merge(FtmsParser.parseCrossTrainerData(value))
+                _metrics.value = withExternalHr(_metrics.value.merge(FtmsParser.parseCrossTrainerData(value)))
             FtmsUuids.INDOOR_BIKE_DATA ->
-                _metrics.value = _metrics.value.merge(FtmsParser.parseIndoorBikeData(value))
+                _metrics.value = withExternalHr(_metrics.value.merge(FtmsParser.parseIndoorBikeData(value)))
             FtmsUuids.HR_MEASUREMENT ->
-                FtmsParser.parseHeartRate(value)?.let { _metrics.value = _metrics.value.copy(heartRate = it) }
+                FtmsParser.parseHeartRate(value)?.let { _metrics.value = withExternalHr(_metrics.value.copy(heartRate = it)) }
             FtmsUuids.MACHINE_STATUS -> {
                 log("Console : ${FtmsParser.describeMachineStatus(value)}")
                 if ((value.firstOrNull()?.toInt() ?: 0) and 0xFF == 0xFF) {

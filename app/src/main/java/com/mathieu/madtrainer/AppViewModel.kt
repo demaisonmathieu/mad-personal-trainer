@@ -3,7 +3,12 @@ package com.mathieu.madtrainer
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import com.mathieu.madtrainer.ble.BikeManager
+import com.mathieu.madtrainer.ble.HeartRateManager
 import com.mathieu.madtrainer.data.Repository
 import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.SessionRecord
@@ -36,6 +41,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val settingsStore = SettingsStore(app)
     val repo = Repository(app)
     val bike = BikeManager(app, settingsStore)
+    val hr = HeartRateManager(app, settingsStore, onBpm = { bike.setExternalHeartRate(it) }, log = { bike.log(it) })
 
     private val _session = MutableStateFlow(LiveSession())
     val session: StateFlow<LiveSession> = _session
@@ -53,6 +59,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch { repo.load() }
         checkForUpdate()
+        reconnectHeartRate()
     }
 
     // ------------------------------------------------------------ mises à jour
@@ -215,7 +222,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteWorkout(id: String) = viewModelScope.launch { repo.deleteWorkout(id) }
     fun deleteSession(id: String) = viewModelScope.launch { repo.deleteSession(id) }
 
+    /** Se reconnecte automatiquement à la montre / ceinture mémorisée si les autorisations sont déjà accordées. */
+    fun reconnectHeartRate() {
+        val app = getApplication<Application>()
+        val s = settingsStore.settings.value
+        val addr = s.hrAddress ?: return
+        val perm = if (Build.VERSION.SDK_INT >= 31) Manifest.permission.BLUETOOTH_CONNECT else Manifest.permission.ACCESS_FINE_LOCATION
+        if (ContextCompat.checkSelfPermission(app, perm) != PackageManager.PERMISSION_GRANTED) return
+        if (!bike.isBluetoothEnabled) return
+        runCatching { hr.connect(addr, s.hrName) }
+    }
+
     override fun onCleared() {
+        hr.release()
         bike.release()
         super.onCleared()
     }

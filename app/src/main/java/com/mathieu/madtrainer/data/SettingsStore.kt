@@ -11,6 +11,9 @@ data class Settings(
     val wideResistance: Boolean = false,
     val lastAddress: String? = null,
     val lastName: String? = null,
+    /** Cardiofréquencemètre / montre mémorisé. */
+    val hrAddress: String? = null,
+    val hrName: String? = null,
 )
 
 class SettingsStore(context: Context) {
@@ -23,6 +26,8 @@ class SettingsStore(context: Context) {
         wideResistance = prefs.getBoolean("wideResistance", false),
         lastAddress = prefs.getString("lastAddress", null),
         lastName = prefs.getString("lastName", null),
+        hrAddress = prefs.getString("hrAddress", null),
+        hrName = prefs.getString("hrName", null),
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -32,6 +37,8 @@ class SettingsStore(context: Context) {
             .putBoolean("wideResistance", s.wideResistance)
             .putString("lastAddress", s.lastAddress)
             .putString("lastName", s.lastName)
+            .putString("hrAddress", s.hrAddress)
+            .putString("hrName", s.hrName)
             .apply()
         _settings.value = s
     }

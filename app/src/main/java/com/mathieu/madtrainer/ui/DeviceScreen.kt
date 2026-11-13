@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -188,6 +190,10 @@ fun DeviceScreen(vm: AppViewModel) {
         }
 
         item {
+            HeartRateCard(vm, onNeedPermission = { action -> withPermissions(action) })
+        }
+
+        item {
             Column {
             SectionTitle("Réglages console")
             Card(Modifier.fillMaxWidth()) {
@@ -285,6 +291,79 @@ fun DeviceScreen(vm: AppViewModel) {
                     }
                 }
             }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun HeartRateCard(vm: AppViewModel, onNeedPermission: (() -> Unit) -> Unit) {
+    val hr = vm.hr
+    val state by hr.state.collectAsStateWithLifecycle()
+    val scanning by hr.scanning.collectAsStateWithLifecycle()
+    val results by hr.scanResults.collectAsStateWithLifecycle()
+    val name by hr.name.collectAsStateWithLifecycle()
+    val bpm by hr.bpm.collectAsStateWithLifecycle()
+    val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+
+    Column {
+        SectionTitle("Cardio (montre ou ceinture)")
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Favorite, null, tint = HrColor)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when (state) {
+                                ConnState.CONNECTED -> name ?: "Connecté"
+                                ConnState.CONNECTING, ConnState.DISCOVERING -> "Connexion à ${name ?: "…"}"
+                                ConnState.DISCONNECTED -> settings.hrName?.let { "$it (déconnecté)" } ?: "Aucun appareil"
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (state == ConnState.CONNECTED && bpm == null) {
+                            Text("En attente de mesures… (diffusion activée sur la montre ?)", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Text(bpm?.let { "$it bpm" } ?: "--", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state == ConnState.DISCONNECTED) {
+                        OutlinedButton(onClick = { onNeedPermission { hr.startScan() } }, enabled = !scanning) {
+                            Text(if (scanning) "Recherche…" else "Rechercher")
+                        }
+                        val addr = settings.hrAddress
+                        if (addr != null) {
+                            Button(onClick = { onNeedPermission { hr.connect(addr, settings.hrName) } }) { Text("Reconnecter") }
+                        }
+                    } else {
+                        OutlinedButton(onClick = { hr.disconnect() }) { Text("Déconnecter") }
+                        TextButton(onClick = { hr.forget() }) { Text("Oublier") }
+                    }
+                }
+                if (state == ConnState.DISCONNECTED) {
+                    results.forEach { r ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable { onNeedPermission { hr.connect(r.address, r.name) } }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(r.name, modifier = Modifier.weight(1f))
+                            Text("${r.rssi} dBm", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    if (scanning && results.isEmpty()) {
+                        Text(
+                            "Sur l'Amazfit : Réglages > Fréquence cardiaque > Diffusion de la fréquence cardiaque (ou depuis une séance d'entraînement), puis garde l'écran de diffusion ouvert.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
             }
         }
     }

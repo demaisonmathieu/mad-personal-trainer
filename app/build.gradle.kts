@@ -13,15 +13,30 @@ android {
         applicationId = "com.mathieu.madtrainer"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Numéro incrémenté automatiquement par GitHub Actions (permet les mises à jour par-dessus)
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "1.0.$build"
+    }
+
+    signingConfigs {
+        // Clé fixe versionnée : chaque APK peut s'installer par-dessus le précédent sans perdre les données.
+        // Projet perso : à remplacer par des secrets GitHub si le dépôt devient public.
+        create("mad") {
+            storeFile = file("release.jks")
+            storePassword = "madtrainer"
+            keyAlias = "mad"
+            keyPassword = "madtrainer"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signé avec la clé debug pour pouvoir l'installer directement
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("mad")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("mad")
         }
     }
     compileOptions {

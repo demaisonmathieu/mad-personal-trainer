@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,11 +41,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.LogExporter
 import com.mathieu.madtrainer.ble.ConnState
 
 private fun blePermissions(): Array<String> =
@@ -65,6 +68,7 @@ fun DeviceScreen(vm: AppViewModel) {
     val caps by bike.caps.collectAsStateWithLifecycle()
     val log by bike.log.collectAsStateWithLifecycle()
     val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var permError by remember { mutableStateOf<String?>(null) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -181,6 +185,7 @@ fun DeviceScreen(vm: AppViewModel) {
         }
 
         item {
+            Column {
             SectionTitle("Réglages console")
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -224,11 +229,24 @@ fun DeviceScreen(vm: AppViewModel) {
                     }
                 }
             }
+            }
         }
 
         item {
-            SectionTitle("Journal Bluetooth")
-            Card(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SectionTitle("Journal Bluetooth", Modifier.weight(1f))
+                Button(onClick = { LogExporter.share(context, bike.buildReport()) }) {
+                    Icon(Icons.Filled.Share, null)
+                    Text("  Envoyer")
+                }
+            }
+            Text(
+                "Choisis Drive (compte Scalizer) : Claude pourra lire le journal directement.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Card(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)) {
                 SelectionContainer {
                     Column(Modifier.padding(12.dp)) {
                         if (log.isEmpty()) Text("—", style = MaterialTheme.typography.bodySmall)
@@ -237,6 +255,7 @@ fun DeviceScreen(vm: AppViewModel) {
                         }
                     }
                 }
+            }
             }
         }
     }

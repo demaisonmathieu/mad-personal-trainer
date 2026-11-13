@@ -58,6 +58,7 @@ fun HistoryScreen(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
+          Column {
             SectionTitle("Historique", Modifier.padding(top = 8.dp))
             if (sessions.isNotEmpty()) {
                 val totalSec = sessions.sumOf { it.durationSec }
@@ -77,6 +78,7 @@ fun HistoryScreen(vm: AppViewModel) {
             } else {
                 Text("Aucune séance enregistrée pour l'instant.", style = MaterialTheme.typography.bodyMedium)
             }
+          }
         }
         items(sessions, key = { it.id }) { s ->
             Card(Modifier.fillMaxWidth().clickable { selectedId = s.id }) {

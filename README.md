@@ -18,12 +18,16 @@ MAD Personal Trainer a vocation à accueillir d'autres machines et d'autres usag
 
 ## Récupérer l'APK
 
-- **GitHub Actions** : chaque push sur `main` compile l'APK. Va dans l'onglet *Actions*, ouvre le dernier run, puis télécharge l'artefact `MADPersonalTrainer-apk` (un zip qui contient l'APK).
-- **Android Studio** : ouvre le dossier du projet, puis *Run* (JDK 17, SDK 35).
+**Lien direct, depuis le téléphone, vers la dernière version :**
+https://github.com/demaisonmathieu/mad-personal-trainer/releases/latest/download/MADPersonalTrainer.apk
 
-Pour l'installer, autorise « Installer des applis inconnues » pour ton navigateur ou ton gestionnaire de fichiers.
+Il faut être connecté à GitHub dans le navigateur si le dépôt est privé. Chaque push sur `main` compile l'app et publie une nouvelle Release (`v1.0.<n>`). L'APK est toujours signé avec la même clé (`app/release.jks`) : les mises à jour s'installent donc par-dessus la version précédente sans perdre l'historique.
 
-> L'APK est signé avec une clé de debug générée à chaque compilation CI. Si l'installation d'une nouvelle version échoue, désinstalle d'abord l'ancienne (tu perdras l'historique local).
+Pour installer : ouvre le lien, ouvre l'APK téléchargé, autorise « Installer des applis inconnues » pour le navigateur, puis touche *Installer*.
+
+## Envoyer le journal Bluetooth
+
+Onglet **Vélo**, puis **Envoyer** à côté de « Journal Bluetooth », puis choisis **Drive** (compte Scalizer). Le fichier `mad-trainer-log-AAAAMMJJ-HHMMSS.txt` contient les services GATT de la console, les événements et toutes les trames brutes reçues et envoyées. C'est ce qu'il faut pour diagnostiquer le protocole.
 
 ## Premier lancement
 
@@ -37,7 +41,7 @@ Pour l'installer, autorise « Installer des applis inconnues » pour ton navigat
 - Si le journal indique *« paramètre invalide »*, active **Résistance sur 2 octets** dans les réglages.
 - Si le niveau affiché est 10× trop grand ou trop petit, change l'**échelle** (×1 ou ×10).
 - Si la console répond *« non supporté »* pour la puissance, c'est que le mode ERG n'est pas géré par ta console : utilise les séances en résistance.
-- Si le journal indique *« protocole Domyos propriétaire »*, ta console est d'une ancienne génération, sans FTMS. Ce protocole n'est pas encore implémenté. Envoie-moi le journal Bluetooth pour qu'on l'ajoute.
+- Si le journal indique *« protocole Domyos propriétaire »*, ta console est d'une ancienne génération, sans FTMS. Ce protocole n'est pas encore implémenté. Envoie le journal Bluetooth sur Drive pour qu'on l'ajoute.
 
 ## Architecture
 

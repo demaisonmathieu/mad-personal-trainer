@@ -79,6 +79,10 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     private val _log = MutableStateFlow<List<String>>(emptyList())
     val log: StateFlow<List<String>> = _log
 
+    /** Trames brutes reçues/envoyées (pour le diagnostic, non affichées). */
+    private val rawFrames = ArrayDeque<String>()
+    private val gattDump = mutableListOf<String>()
+
     private var gatt: BluetoothGatt? = null
     private var controlPoint: BluetoothGattCharacteristic? = null
     private var wantConnected = false
@@ -95,7 +99,55 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
     fun log(msg: String) {
         val line = "${timeFmt.format(Date())}  $msg"
-        _log.value = (_log.value + line).takeLast(200)
+        _log.value = (_log.value + line).takeLast(500)
+    }
+
+    @Synchronized
+    private fun raw(direction: String, uuid: UUID, value: ByteArray) {
+        val short = uuid.toString().substring(4, 8).uppercase()
+        rawFrames.addLast("${timeFmt.format(Date())} $direction $short ${value.toHex()}")
+        while (rawFrames.size > 2000) rawFrames.removeFirst()
+    }
+
+    /** Rapport texte complet pour le diagnostic (journal, GATT, capacités, trames brutes). */
+    @Synchronized
+    fun buildReport(): String = buildString {
+        val st = settingsStore.settings.value
+        appendLine("=== MAD Personal Trainer — journal Bluetooth ===")
+        appendLine("Date : ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.FRANCE).format(Date())}")
+        appendLine("Téléphone : ${Build.MANUFACTURER} ${Build.MODEL} — Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        appendLine("Appareil : ${_deviceName.value ?: "-"} (${targetAddress ?: "-"}) — état ${_state.value}")
+        appendLine("Réglages : échelle résistance ×${st.resistanceScale}, résistance 2 octets=${st.wideResistance}")
+        appendLine("Capacités : ${_caps.value}")
+        appendLine("Dernières mesures : ${_metrics.value}")
+        appendLine()
+        appendLine("--- Services GATT ---")
+        if (gattDump.isEmpty()) appendLine("(aucun)") else gattDump.forEach { appendLine(it) }
+        appendLine()
+        appendLine("--- Événements ---")
+        _log.value.forEach { appendLine(it) }
+        appendLine()
+        appendLine("--- Trames brutes (RX = reçu, TX = envoyé, UUID 16 bits) ---")
+        rawFrames.forEach { appendLine(it) }
+    }
+
+    @Synchronized
+    private fun dumpGatt(g: BluetoothGatt) {
+        gattDump.clear()
+        g.services.forEach { svc ->
+            gattDump.add("Service ${svc.uuid}")
+            svc.characteristics.forEach { ch ->
+                val p = ch.properties
+                val props = buildList {
+                    if (p and BluetoothGattCharacteristic.PROPERTY_READ != 0) add("read")
+                    if (p and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) add("write")
+                    if (p and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) add("writeNoResp")
+                    if (p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) add("notify")
+                    if (p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) add("indicate")
+                }
+                gattDump.add("  Char ${ch.uuid} [${props.joinToString(",")}]")
+            }
+        }
     }
 
     fun rawToLevel(raw: Int): Double = raw.toDouble() / settingsStore.settings.value.resistanceScale.coerceAtLeast(1)
@@ -275,7 +327,8 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         res
     }
 
-    private suspend fun read(ch: BluetoothGattCharacteristic): ByteArray? = gattOp { it.readCharacteristic(ch) }
+    private suspend fun read(ch: BluetoothGattCharacteristic): ByteArray? =
+        gattOp { it.readCharacteristic(ch) }?.also { raw("RD", ch.uuid, it) }
 
     private suspend fun write(ch: BluetoothGattCharacteristic, value: ByteArray): Boolean = gattOp { g ->
         val type = if (ch.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0)
@@ -316,6 +369,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
 
     private suspend fun setup(g: BluetoothGatt) {
         if (g != gatt) return
+        dumpGatt(g)
         val ftms = g.getService(FtmsUuids.FTMS_SERVICE)
         if (ftms == null) {
             val legacy = g.getService(FtmsUuids.DOMYOS_LEGACY_SERVICE) != null
@@ -326,6 +380,8 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
                 else "Cet appareil n'expose pas le service FTMS.",
             )
             g.services.forEach { log("Service ${it.uuid}") }
+            // Abonnement à tout ce qui notifie, pour capturer le protocole dans le journal
+            g.services.flatMap { it.characteristics }.forEach { subscribe(it) }
             return
         }
 
@@ -378,6 +434,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     }
 
     private fun onNotify(uuid: UUID, value: ByteArray) {
+        raw("RX", uuid, value)
         when (uuid) {
             FtmsUuids.CROSS_TRAINER_DATA ->
                 _metrics.value = _metrics.value.merge(FtmsParser.parseCrossTrainerData(value))
@@ -413,6 +470,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
             return false
         }
         log("→ ${bytes.toHex()}")
+        raw("TX", cp.uuid, bytes)
         val ok = write(cp, bytes)
         if (!ok) log("Écriture refusée par la console")
         return ok

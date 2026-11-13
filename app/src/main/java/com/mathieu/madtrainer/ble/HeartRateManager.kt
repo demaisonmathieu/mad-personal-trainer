@@ -73,8 +73,16 @@ class HeartRateManager(
 
     /** Renvoie true quand la connexion du vélo est en cours : on ne la perturbe pas. */
     var isBikeBusy: () -> Boolean = { false }
+    private val hrSeenLogged = mutableSetOf<String>()
 
-    private fun cleanName(n: String) = n.removeSuffix(" (connectée)").removeSuffix(" (appairée)").trim()
+    private fun cleanName(n: String) = n.removeSuffix(" (connectée)").removeSuffix(" (appairée)").removeSuffix(" ❤ FC").trim()
+
+    /** « Amazfit Balance-5B92 » → « amazfit balance » : en diffusion, le suffixe peut changer ou disparaître. */
+    private fun baseName(n: String) = cleanName(n).substringBefore('-').trim().lowercase()
+
+    private fun matchesTarget(name: String, hasHr: Boolean, target: String): Boolean =
+        cleanName(name).equals(target, true) || (baseName(name).isNotEmpty() && baseName(name) == baseName(target) && hasHr) ||
+            (baseName(name) == baseName(target))
 
     /** Noms typiques de montres / capteurs cardio (beaucoup n'annoncent pas le service 0x180D). */
     private val hrNameHints = listOf(
@@ -112,7 +120,7 @@ class HeartRateManager(
             seenDevices[result.device.address] = result.device
             // Reconnexion automatique : on retrouve la montre par son nom, quelle que soit son adresse du moment
             val target = searchName
-            if (target != null && cleanName(name).equals(target, ignoreCase = true)) {
+            if (target != null && matchesTarget(name, hasHr, target)) {
                 searchName = null
                 searchJob?.cancel()
                 stopScan()
@@ -122,7 +130,11 @@ class HeartRateManager(
             }
             // On garde : service cardio annoncé, ou nom évocateur d'une montre / ceinture
             if (!hasHr && !isLikelyHr(name)) return
-            addResult(ScanItem(result.device.address, name, result.rssi, ftms = hasHr))
+            addResult(ScanItem(result.device.address, if (hasHr) "$name ❤ FC" else name, result.rssi, ftms = hasHr))
+            if (hasHr && !hrSeenLogged.contains(result.device.address)) {
+                hrSeenLogged += result.device.address
+                log("Cardio : « $name » diffuse la fréquence cardiaque (${result.device.address})")
+            }
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -205,7 +217,10 @@ class HeartRateManager(
             if (searchName != null) {
                 searchName = null
                 stopScan()
-                log("Cardio : « $name » introuvable")
+                log(
+                    "Cardio : « $name » introuvable. Aucune montre ne diffuse sa FC : lance une séance d'entraînement " +
+                        "sur la montre avec la diffusion FC activée, puis Rechercher.",
+                )
                 onConnectFailed()
             }
         }

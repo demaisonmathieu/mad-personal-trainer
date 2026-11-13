@@ -16,6 +16,13 @@ import com.mathieu.madtrainer.coach.CoachPrompt
 import com.mathieu.madtrainer.coach.Equipment
 import com.mathieu.madtrainer.coach.SavedPlan
 import com.mathieu.madtrainer.coach.UserProfile
+import com.mathieu.madtrainer.coach.PainLog
+import com.mathieu.madtrainer.coach.PlayerStep
+import com.mathieu.madtrainer.coach.SavedStrengthPlan
+import com.mathieu.madtrainer.coach.StrengthPlayer
+import com.mathieu.madtrainer.coach.StrengthProfile
+import com.mathieu.madtrainer.coach.StrengthPrompt
+import com.mathieu.madtrainer.coach.StrengthSession
 import com.mathieu.madtrainer.strava.StravaCache
 import com.mathieu.madtrainer.strava.StravaClient
 import com.mathieu.madtrainer.strava.StravaSummary
@@ -56,6 +63,21 @@ sealed interface StravaState {
     data object Working : StravaState
     data class Ok(val message: String) : StravaState
     data class Error(val message: String) : StravaState
+}
+
+/** Lecteur guidé d'une séance de renfo. */
+data class StrengthPlayerState(
+    val session: StrengthSession? = null,
+    val steps: List<PlayerStep> = emptyList(),
+    val index: Int = 0,
+    /** Secondes restantes pour une étape chronométrée ; null pour une étape en répétitions */
+    val remaining: Int? = null,
+    val paused: Boolean = false,
+    val finished: Boolean = false,
+    val painBefore: Int = 0,
+    val elapsed: Int = 0,
+) {
+    val step: PlayerStep? get() = steps.getOrNull(index)
 }
 
 data class LiveSession(
@@ -232,6 +254,124 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val update: StateFlow<UpdateState> = _update
+
+    // ------------------------------------------------------------ renfo
+
+    private val _strengthCoach = MutableStateFlow<CoachState>(CoachState.Idle)
+    val strengthCoach: StateFlow<CoachState> = _strengthCoach
+
+    fun saveStrengthProfile(p: StrengthProfile) = viewModelScope.launch { repo.saveStrengthProfile(p) }
+
+    fun buildStrengthPrompt(): String {
+        val strava = if (settingsStore.settings.value.includeStrava) StravaSummary.describe(repo.strava.value) else null
+        return StrengthPrompt.build(repo.profile.value, repo.strengthProfile.value, repo.sessions.value, repo.painLogs.value, strava)
+    }
+
+    fun importStrengthResponse(response: String) {
+        StrengthPrompt.parse(response).fold(
+            onSuccess = { plan ->
+                viewModelScope.launch {
+                    repo.saveStrengthPlan(SavedStrengthPlan(System.currentTimeMillis(), plan, response))
+                    _strengthCoach.value = CoachState.Done(plan.sessions.size)
+                }
+            },
+            onFailure = { _strengthCoach.value = CoachState.Error(it.message ?: "Réponse illisible") },
+        )
+    }
+
+    fun generateStrengthWithApi() {
+        val s = settingsStore.settings.value
+        if (s.anthropicKey.isBlank()) {
+            _strengthCoach.value = CoachState.Error("Renseigne d'abord ta clé API dans les réglages IA (onglet Coach)")
+            return
+        }
+        if (_strengthCoach.value == CoachState.Generating) return
+        _strengthCoach.value = CoachState.Generating
+        val prompt = buildStrengthPrompt()
+        viewModelScope.launch {
+            runCatching { AnthropicClient.complete(s.anthropicKey, s.anthropicModel, prompt) }
+                .onSuccess { importStrengthResponse(it) }
+                .onFailure { _strengthCoach.value = CoachState.Error(it.message ?: "Échec de l'appel à l'API") }
+        }
+    }
+
+    private val _player = MutableStateFlow(StrengthPlayerState())
+    val player: StateFlow<StrengthPlayerState> = _player
+    private var playerTicker: Job? = null
+
+    fun startStrength(session: StrengthSession, painBefore: Int) {
+        RunTracker.ensureTts()
+        val steps = StrengthPlayer.expand(session)
+        if (steps.isEmpty()) return
+        _player.value = StrengthPlayerState(session, steps, 0, steps[0].seconds, painBefore = painBefore)
+        RunTracker.speak("C'est parti pour ${session.name}.")
+        announcePlayerStep()
+        playerTicker?.cancel()
+        playerTicker = viewModelScope.launch {
+            while (isActive) {
+                delay(1000)
+                playerTick()
+            }
+        }
+    }
+
+    private fun announcePlayerStep() {
+        val p = _player.value
+        val step = p.step ?: return
+        RunTracker.vibrate(if (step.rest) 1 else 3)
+        RunTracker.speak(step.spoken(p.steps.getOrNull(p.index + 1)))
+    }
+
+    private fun playerTick() {
+        val p = _player.value
+        if (p.session == null || p.finished || p.paused) return
+        val r = p.remaining
+        _player.value = p.copy(elapsed = p.elapsed + 1, remaining = r?.minus(1))
+        if (r != null) {
+            if (r - 1 in 1..3) RunTracker.speak("${r - 1}")
+            if (r - 1 <= 0) nextStrengthStep()
+        }
+    }
+
+    /** Étape suivante (bouton « Fait » pour les répétitions, ou fin du chrono). */
+    fun nextStrengthStep() {
+        val p = _player.value
+        val next = p.index + 1
+        if (next >= p.steps.size) {
+            playerTicker?.cancel()
+            _player.value = p.copy(finished = true, remaining = null)
+            RunTracker.vibrate(3)
+            RunTracker.speak("Séance terminée, bravo ! Note ta douleur pour adapter les prochaines séances.")
+            return
+        }
+        _player.value = p.copy(index = next, remaining = p.steps[next].seconds)
+        announcePlayerStep()
+    }
+
+    fun previousStrengthStep() {
+        val p = _player.value
+        val prev = (p.index - 1).coerceAtLeast(0)
+        _player.value = p.copy(index = prev, remaining = p.steps[prev].seconds)
+        announcePlayerStep()
+    }
+
+    fun toggleStrengthPause() {
+        _player.value = _player.value.copy(paused = !_player.value.paused)
+    }
+
+    /** Fin de séance : enregistre la douleur avant/après (réutilisée dans le prochain prompt). */
+    fun finishStrength(painAfter: Int?, note: String) {
+        val p = _player.value
+        playerTicker?.cancel()
+        val session = p.session
+        if (session != null && painAfter != null) {
+            viewModelScope.launch {
+                repo.addPainLog(PainLog(System.currentTimeMillis(), session.name, p.painBefore, painAfter, note))
+                repo.saveStrengthProfile(repo.strengthProfile.value.copy(painLevel = painAfter))
+            }
+        }
+        _player.value = StrengthPlayerState()
+    }
 
     // ------------------------------------------------------------ running
 

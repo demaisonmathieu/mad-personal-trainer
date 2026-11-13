@@ -62,6 +62,20 @@ Onglet **Coach** :
 
 Un nouveau plan remplace les séances du plan précédent. Tes séances perso ne sont pas touchées.
 
+## Renfo et douleurs (IA)
+
+Dans l'onglet Coach, le bouton **Renfo & douleurs** ouvre la section dédiée :
+
+1. **Douleurs et matériel** : zones (sciatique, lombaires, genoux, tendon d'Achille…), intensité de 0 à 10, détails, matériel disponible, séances par semaine, durée et objectifs.
+2. **Générer** (API Claude ou copier-coller). Le prompt reprend tes douleurs, tes séances cardio, Strava et **l'évolution de ta douleur après chaque séance de renfo**. L'IA renvoie :
+   - les règles de sécurité et les **signaux d'alerte** (pour une sciatique : perte de force, engourdissement du périnée, troubles urinaires…) ;
+   - les habitudes quotidiennes ;
+   - les séances détaillées : séries, répétitions ou durée, repos, consignes, versions plus facile et plus dure, cas où éviter l'exercice.
+3. **Lecteur guidé** : chrono pour le gainage et les étirements, bouton *Fait* pour les répétitions, repos minutés, côtés gauche et droite, annonces vocales.
+4. **Suivi de la douleur** : avant et après chaque séance. Le prochain programme retire ou adapte les exercices qui l'ont aggravée.
+
+Ce ne sont que des suggestions, pas un avis médical : en cas de douleur forte ou qui s'aggrave, consulte.
+
 ## Strava
 
 Dans l'onglet **Coach**, carte **Strava** : l'app récupère tes activités des 90 derniers jours (course, vélo, marche…) et ton poids. Le prompt du coach en tient compte : volume hebdomadaire par sport, cardio, et dernières séances.

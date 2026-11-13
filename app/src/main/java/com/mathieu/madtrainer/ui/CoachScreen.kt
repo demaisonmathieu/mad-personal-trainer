@@ -69,6 +69,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
@@ -80,12 +81,20 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     var editingProfile by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
     var showAiSettings by remember { mutableStateOf(false) }
+    var showStrength by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Mon coach — ${settings.sport.label}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Mon coach", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(!showStrength, { showStrength = false }, label = { Text("Plan ${settings.sport.label}") })
+            FilterChip(showStrength, { showStrength = true }, label = { Text("Renfo & douleurs") })
+        }
+        if (showStrength) {
+            StrengthSection(vm)
+        } else {
 
         // ---------------------------------------------------------------- profil
         if (editingProfile) {
@@ -215,6 +224,7 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
         // ---------------------------------------------------------------- plan actuel
         plan?.let { PlanView(it, vm, onStartWorkout) }
         Spacer(Modifier.height(24.dp))
+        }
     }
 }
 
@@ -379,17 +389,17 @@ private fun NumField(label: String, value: String, onChange: (String) -> Unit, m
     )
 }
 
-private fun copyToClipboard(context: Context, text: String) {
+internal fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("Prompt coach", text))
 }
 
-private fun readClipboard(context: Context): String? {
+internal fun readClipboard(context: Context): String? {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     return cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
 }
 
-private fun sharePrompt(context: Context, text: String) {
+internal fun sharePrompt(context: Context, text: String) {
     val send = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)

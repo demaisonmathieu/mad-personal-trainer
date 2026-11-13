@@ -114,7 +114,12 @@ object RunTracker {
         runCatching {
             lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, locationListener, Looper.getMainLooper())
         }
-        if (tts == null) {
+        ensureTts()
+    }
+
+    /** Synthèse vocale française (partagée avec le lecteur de renfo). */
+    fun ensureTts() {
+        if (tts == null && ::app.isInitialized) {
             tts = TextToSpeech(app) { status ->
                 ttsReady = status == TextToSpeech.SUCCESS
                 if (ttsReady) tts?.language = Locale.FRANCE
@@ -339,7 +344,7 @@ object RunTracker {
     }
 
     /** 1 = court (km), 2 = double (consigne), 3 = long (changement d'étape) */
-    private fun vibrate(kind: Int) {
+    fun vibrate(kind: Int) {
         val v: Vibrator? = if (Build.VERSION.SDK_INT >= 31) {
             app.getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {

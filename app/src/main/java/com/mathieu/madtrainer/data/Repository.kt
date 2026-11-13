@@ -1,7 +1,10 @@
 package com.mathieu.madtrainer.data
 
 import android.content.Context
+import com.mathieu.madtrainer.coach.PainLog
 import com.mathieu.madtrainer.coach.SavedPlan
+import com.mathieu.madtrainer.coach.SavedStrengthPlan
+import com.mathieu.madtrainer.coach.StrengthProfile
 import com.mathieu.madtrainer.coach.UserProfile
 import com.mathieu.madtrainer.strava.StravaCache
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +26,16 @@ class Repository(context: Context) {
     private val plansFile = File(context.filesDir, "coach_plans.json")
     private val plansSerializer = MapSerializer(Sport.serializer(), SavedPlan.serializer())
     private val stravaFile = File(context.filesDir, "strava.json")
+    private val strengthProfileFile = File(context.filesDir, "strength_profile.json")
+    private val strengthPlanFile = File(context.filesDir, "strength_plan.json")
+    private val painLogFile = File(context.filesDir, "pain_logs.json")
+
+    private val _strengthProfile = MutableStateFlow(StrengthProfile())
+    val strengthProfile: StateFlow<StrengthProfile> = _strengthProfile
+    private val _strengthPlan = MutableStateFlow<SavedStrengthPlan?>(null)
+    val strengthPlan: StateFlow<SavedStrengthPlan?> = _strengthPlan
+    private val _painLogs = MutableStateFlow<List<PainLog>>(emptyList())
+    val painLogs: StateFlow<List<PainLog>> = _painLogs
 
     private val _strava = MutableStateFlow(StravaCache())
     val strava: StateFlow<StravaCache> = _strava
@@ -51,6 +64,11 @@ class Repository(context: Context) {
         }
         _profile.value = runCatching { json.decodeFromString(UserProfile.serializer(), profileFile.readText()) }
             .getOrDefault(UserProfile())
+        _strengthProfile.value = runCatching { json.decodeFromString(StrengthProfile.serializer(), strengthProfileFile.readText()) }
+            .getOrDefault(StrengthProfile())
+        _strengthPlan.value = runCatching { json.decodeFromString(SavedStrengthPlan.serializer(), strengthPlanFile.readText()) }.getOrNull()
+        _painLogs.value = runCatching { json.decodeFromString(ListSerializer(PainLog.serializer()), painLogFile.readText()) }
+            .getOrDefault(emptyList())
         _strava.value = runCatching { json.decodeFromString(StravaCache.serializer(), stravaFile.readText()) }
             .getOrDefault(StravaCache())
         _plans.value = runCatching { json.decodeFromString(plansSerializer, plansFile.readText()) }.getOrNull()
@@ -64,6 +82,22 @@ class Repository(context: Context) {
 
     private fun writeWorkouts(list: List<Workout>) {
         workoutsFile.writeText(json.encodeToString(ListSerializer(Workout.serializer()), list))
+    }
+
+    suspend fun saveStrengthProfile(p: StrengthProfile) = withContext(Dispatchers.IO) {
+        strengthProfileFile.writeText(json.encodeToString(StrengthProfile.serializer(), p))
+        _strengthProfile.value = p
+    }
+
+    suspend fun saveStrengthPlan(p: SavedStrengthPlan) = withContext(Dispatchers.IO) {
+        strengthPlanFile.writeText(json.encodeToString(SavedStrengthPlan.serializer(), p))
+        _strengthPlan.value = p
+    }
+
+    suspend fun addPainLog(l: PainLog) = withContext(Dispatchers.IO) {
+        val list = (_painLogs.value + l).takeLast(100)
+        painLogFile.writeText(json.encodeToString(ListSerializer(PainLog.serializer()), list))
+        _painLogs.value = list
     }
 
     suspend fun saveStrava(c: StravaCache) = withContext(Dispatchers.IO) {

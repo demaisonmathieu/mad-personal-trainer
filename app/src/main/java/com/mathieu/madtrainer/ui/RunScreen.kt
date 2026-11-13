@@ -39,6 +39,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.delay
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +67,7 @@ import com.mathieu.madtrainer.data.Workout
 import com.mathieu.madtrainer.data.formatDistance
 import com.mathieu.madtrainer.data.formatDuration
 import com.mathieu.madtrainer.data.formatPace
+import com.mathieu.madtrainer.run.GpsStatus
 import com.mathieu.madtrainer.run.RunState
 import com.mathieu.madtrainer.run.RunTracker
 
@@ -95,15 +99,24 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
             RunTracker.warmUpGps()
             if (startAfterPermission) RunTracker.start(vm.pendingRun.value)
         } else {
+            RunTracker.warmUpGps() // met l'état « Autorisation requise »
             permError = "La localisation précise est nécessaire pour mesurer la distance et l'allure."
         }
         startAfterPermission = false
     }
 
-    // GPS allumé tant que l'écran Course est affiché (pour avoir un point avant le départ)
+    // GPS allumé tant que l'écran Course est affiché (pour avoir un point avant le départ).
+    // L'autorisation est demandée dès l'arrivée sur l'écran.
     DisposableEffect(Unit) {
-        if (hasLocation()) RunTracker.warmUpGps()
+        if (hasLocation()) RunTracker.warmUpGps() else launcher.launch(runPermissions())
         onDispose { if (!RunTracker.state.value.running) RunTracker.stopGps() }
+    }
+    // Si la localisation était coupée ou refusée, on revérifie régulièrement (retour des réglages)
+    LaunchedEffect(run.gpsStatus) {
+        while (run.gpsStatus == GpsStatus.DISABLED || run.gpsStatus == GpsStatus.NO_PERMISSION) {
+            delay(3000)
+            if (hasLocation()) RunTracker.warmUpGps()
+        }
     }
     val view = LocalView.current
     DisposableEffect(run.running) {
@@ -119,6 +132,7 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         StatusRow(run, hrState == ConnState.CONNECTED, onGoToSensors)
+        GpsHelp(run.gpsStatus, onAskPermission = { launcher.launch(runPermissions()) })
         permError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         when {
@@ -147,12 +161,7 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
                     Icon(Icons.Filled.PlayArrow, null)
                     Text(if (pending == null) "  Démarrer une course libre" else "  Démarrer « ${pending?.name} »")
                 }
-                if (!run.gpsFix && hasLocation()) {
-                    Text(
-                        "Recherche du signal GPS… Pour une distance précise dès le départ, attends le point vert (dehors, ciel dégagé).",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+
                 if (pending == null && runWorkouts.isNotEmpty()) {
                     SectionTitle("Ou choisis une séance guidée")
                     runWorkouts.forEach { w ->
@@ -177,12 +186,16 @@ private fun workoutSummary(w: Workout): String {
 @Composable
 private fun StatusRow(run: RunState, hrConnected: Boolean, onGoToSensors: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(
-            if (run.gpsFix) Icons.Filled.GpsFixed else Icons.Filled.GpsNotFixed, null,
-            tint = if (run.gpsFix) Color(0xFF2E9E4F) else MaterialTheme.colorScheme.error,
-        )
+        val (color, label) = when (run.gpsStatus) {
+            GpsStatus.OK -> Color(0xFF2E9E4F) to "GPS OK"
+            GpsStatus.WEAK -> Color(0xFFE69B00) to "GPS faible"
+            GpsStatus.SEARCHING -> Color(0xFFE69B00) to "Recherche GPS…"
+            GpsStatus.DISABLED -> MaterialTheme.colorScheme.error to "Localisation coupée"
+            GpsStatus.NO_PERMISSION -> MaterialTheme.colorScheme.error to "Autorisation requise"
+        }
+        Icon(if (run.gpsStatus == GpsStatus.OK) Icons.Filled.GpsFixed else Icons.Filled.GpsNotFixed, null, tint = color)
         Text(
-            if (run.gpsFix) "GPS OK" + (run.gpsAccuracy?.let { " (±${it.toInt()} m)" } ?: "") else "GPS…",
+            label + (run.gpsAccuracy?.takeIf { run.gpsStatus == GpsStatus.OK || run.gpsStatus == GpsStatus.WEAK }?.let { " (±${it.toInt()} m)" } ?: ""),
             style = MaterialTheme.typography.labelLarge,
         )
         Spacer(Modifier.weight(1f))
@@ -326,5 +339,41 @@ private fun RunSummary(rec: SessionRecord) {
                 ),
             )
         }
+    }
+}
+
+/** Explique quoi faire selon l'état du GPS. */
+@Composable
+private fun GpsHelp(status: GpsStatus, onAskPermission: () -> Unit) {
+    val context = LocalContext.current
+    when (status) {
+        GpsStatus.NO_PERMISSION -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("L'app a besoin de la localisation précise pour mesurer distance et allure.", color = MaterialTheme.colorScheme.onErrorContainer)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onAskPermission) { Text("Autoriser") }
+                    TextButton(onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }) { Text("Réglages de l'app") }
+                }
+            }
+        }
+        GpsStatus.DISABLED -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("La localisation du téléphone est désactivée.", color = MaterialTheme.colorScheme.onErrorContainer)
+                TextButton(onClick = {
+                    context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }) { Text("Activer la localisation") }
+            }
+        }
+        GpsStatus.SEARCHING, GpsStatus.WEAK -> Text(
+            "Le GPS a besoin du ciel : sors dehors et attends quelques secondes le point vert (±25 m ou mieux) avant de démarrer. " +
+                "À l'intérieur, il reste en orange.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        GpsStatus.OK -> Unit
     }
 }

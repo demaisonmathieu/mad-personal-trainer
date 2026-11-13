@@ -24,6 +24,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,10 +103,37 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
                                 onStart()
                             }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
                             IconButton(onClick = { editing = w }) { Icon(Icons.Filled.Edit, "Modifier") }
-                            IconButton(onClick = {
-                                vm.saveWorkout(w.copy(id = UUID.randomUUID().toString(), name = w.name + " (copie)"))
-                            }) { Icon(Icons.Filled.ContentCopy, "Dupliquer") }
-                            IconButton(onClick = { vm.deleteWorkout(w.id) }) { Icon(Icons.Filled.Delete, "Supprimer") }
+                            Box {
+                                var menu by remember { mutableStateOf(false) }
+                                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Plus") }
+                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (w.sport == Sport.RUNNING) "Faire sur l'elliptique" else "Faire en course") },
+                                        leadingIcon = { Icon(Icons.Filled.SwapHoriz, null) },
+                                        onClick = {
+                                            menu = false
+                                            vm.runOnOtherSport(w)
+                                            onStart()
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Dupliquer") },
+                                        leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
+                                        onClick = {
+                                            menu = false
+                                            vm.saveWorkout(w.copy(id = UUID.randomUUID().toString(), name = w.name + " (copie)"))
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Supprimer") },
+                                        leadingIcon = { Icon(Icons.Filled.Delete, null) },
+                                        onClick = {
+                                            menu = false
+                                            vm.deleteWorkout(w.id)
+                                        },
+                                    )
+                                }
+                            }
                         }
                         WorkoutProfile(w, Modifier.fillMaxWidth().height(40.dp).padding(top = 6.dp))
                     }
@@ -275,7 +306,7 @@ private fun StepEditor(
             val modes = if (running) {
                 listOf(StepMode.PACE to "Allure", StepMode.HR_ZONE to "Zone cardio", StepMode.FREE to "Libre")
             } else {
-                listOf(StepMode.RESISTANCE to "Résistance", StepMode.POWER to "Puissance", StepMode.FREE to "Libre")
+                listOf(StepMode.RESISTANCE to "Résistance", StepMode.POWER to "Watts", StepMode.HR_ZONE to "Zone", StepMode.FREE to "Libre")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 modes.forEach { (m, label) ->
@@ -331,7 +362,7 @@ private fun StepEditor(
                     onValue = { onChange(step.copy(durationSec = (step.durationSec / 60) * 60 + it.coerceIn(0, 59))) },
                     modifier = Modifier.weight(1f),
                 )
-                if (running) {
+                if (running || step.mode == StepMode.HR_ZONE) {
                     RunTargetField(step, onChange, Modifier.weight(1f))
                 } else if (step.mode != StepMode.FREE) {
                     NumberField(

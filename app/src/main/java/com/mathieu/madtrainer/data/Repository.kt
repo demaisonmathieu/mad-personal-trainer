@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -24,6 +25,16 @@ class Repository(context: Context) {
     private val profileFile = File(context.filesDir, "profile.json")
     private val planFile = File(context.filesDir, "coach_plan.json") // ancien format (elliptique)
     private val plansFile = File(context.filesDir, "coach_plans.json")
+    private val globalPlanFile = File(context.filesDir, "coach_global_plan.json")
+    private val doneFile = File(context.filesDir, "week_done.json")
+
+    /** Plan commun elliptique + course. */
+    private val _globalPlan = MutableStateFlow<SavedPlan?>(null)
+    val globalPlan: StateFlow<SavedPlan?> = _globalPlan
+
+    /** Séances du plan cochées « faites » à la main (identifiants). */
+    private val _done = MutableStateFlow<Set<String>>(emptySet())
+    val done: StateFlow<Set<String>> = _done
     private val plansSerializer = MapSerializer(Sport.serializer(), SavedPlan.serializer())
     private val stravaFile = File(context.filesDir, "strava.json")
     private val strengthProfileFile = File(context.filesDir, "strength_profile.json")
@@ -71,6 +82,9 @@ class Repository(context: Context) {
             .getOrDefault(emptyList())
         _strava.value = runCatching { json.decodeFromString(StravaCache.serializer(), stravaFile.readText()) }
             .getOrDefault(StravaCache())
+        _globalPlan.value = runCatching { json.decodeFromString(SavedPlan.serializer(), globalPlanFile.readText()) }.getOrNull()
+        _done.value = runCatching { json.decodeFromString(ListSerializer(String.serializer()), doneFile.readText()).toSet() }
+            .getOrDefault(emptySet())
         _plans.value = runCatching { json.decodeFromString(plansSerializer, plansFile.readText()) }.getOrNull()
             ?: runCatching { mapOf(Sport.ELLIPTICAL to json.decodeFromString(SavedPlan.serializer(), planFile.readText())) }
                 .getOrDefault(emptyMap())
@@ -82,6 +96,23 @@ class Repository(context: Context) {
 
     private fun writeWorkouts(list: List<Workout>) {
         workoutsFile.writeText(json.encodeToString(ListSerializer(Workout.serializer()), list))
+    }
+
+    /** Enregistre le plan commun et remplace les séances du plan commun précédent. */
+    suspend fun saveGlobalPlan(plan: SavedPlan, workouts: List<Workout>) = withContext(Dispatchers.IO) {
+        val oldIds = _globalPlan.value?.workoutIds.orEmpty().toSet()
+        val list = _workouts.value.filterNot { it.id in oldIds } + workouts
+        writeWorkouts(list)
+        _workouts.value = list
+        val saved = plan.copy(workoutIds = workouts.map { it.id })
+        globalPlanFile.writeText(json.encodeToString(SavedPlan.serializer(), saved))
+        _globalPlan.value = saved
+    }
+
+    suspend fun setDone(id: String, done: Boolean) = withContext(Dispatchers.IO) {
+        val set = if (done) _done.value + id else _done.value - id
+        doneFile.writeText(json.encodeToString(ListSerializer(String.serializer()), set.toList()))
+        _done.value = set
     }
 
     suspend fun saveStrengthProfile(p: StrengthProfile) = withContext(Dispatchers.IO) {

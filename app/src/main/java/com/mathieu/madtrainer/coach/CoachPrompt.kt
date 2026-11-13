@@ -150,6 +150,94 @@ object CoachPrompt {
         }
     }
 
+    /**
+     * Plan commun : elliptique + course (+ jours de renfo réservés). Les séances privilégient les zones
+     * cardio, langue commune aux deux machines.
+     */
+    fun buildGlobal(
+        profile: UserProfile,
+        sessions: List<SessionRecord>,
+        equipment: Equipment,
+        otherActivities: String? = null,
+        strength: StrengthProfile? = null,
+        now: Date = Date(),
+    ): String {
+        // On part du prompt elliptique (profil, matériel, historique, Strava) et on remplace la fin
+        val base = build(profile, sessions, equipment, now, otherActivities, Sport.ELLIPTICAL)
+        val head = base.substringBefore("## Ce que j'attends")
+            .replace(
+                "Tu es un coach sportif diplômé, spécialisé en entraînement cardio sur vélo elliptique, prudent et bienveillant.",
+                "Tu es un coach sportif diplômé (course à pied et cardio en salle), prudent et bienveillant.",
+            )
+        val p = profile
+        return buildString {
+            append(head)
+            appendLine("## Sports pratiqués")
+            appendLine("- Course à pied en extérieur (app avec GPS, cardio de la montre, annonces vocales).")
+            appendLine("- Vélo elliptique à la maison : sans impact, idéal pour la récupération active, les jours de douleur ou de mauvais temps.")
+            if (p.runningInfo.isNotBlank()) appendLine("- Repères running : ${p.runningInfo.trim()}")
+            if (strength != null && strength.sessionsPerWeek > 0) {
+                appendLine("- Renforcement : ${strength.sessionsPerWeek} séance(s) de ${strength.sessionMinutes} min par semaine, programmées à part. Réserve-leur des jours (sans les détailler) et évite de placer une séance cardio intense le même jour." +
+                    if (strength.painAreas.isNotEmpty()) " Douleurs actuelles : ${strength.painAreas.joinToString(", ")} (${strength.painLevel}/10) : favorise l'elliptique quand l'impact de la course est déconseillé." else "")
+            }
+            appendLine()
+            appendLine("## Ce que j'attends")
+            appendLine("1. Une courte analyse et ce qui est réaliste en ${p.horizonWeeks} semaines.")
+            appendLine("2. UN SEUL plan hebdomadaire qui répartit intelligemment course et elliptique (${p.sessionsPerWeek} séances cardio par semaine au total, environ ${p.sessionMinutes} min), avec la progression semaine par semaine.")
+            appendLine("3. Toutes les séances, exécutables par l'app, chacune avec son sport (ELLIPTICAL ou RUNNING).")
+            appendLine("4. Des conseils concrets : technique, nutrition et hydratation (généraux), récupération, sommeil, motivation.")
+            appendLine("5. Les signaux d'alerte qui imposent d'arrêter ou de consulter.")
+            appendLine()
+            appendLine("Règles pour les séances :")
+            appendLine("- Chaque séance commence par un échauffement (≥ 5 min) et finit par un retour au calme (≥ 3 min).")
+            appendLine("- Utilise de préférence le mode HR_ZONE (target = zone 1 à 5) : il fonctionne sur les DEUX sports (sur l'elliptique, l'app ajuste la résistance pour tenir la zone). La séance peut ainsi être faite sur l'autre machine si besoin.")
+            appendLine("- Autres modes : RUNNING → PACE (target = secondes par km) avec distance_m possible ; ELLIPTICAL → RESISTANCE (niveau ${equipment.resistanceMin}-${equipment.resistanceMax}) ou POWER (watts). FREE = sans consigne.")
+            appendLine("- Environ 80 % du volume en zone 1-2, 1 à 2 séances de qualité par semaine maximum, progression ≤ 10 % par semaine.")
+            appendLine("- Pas deux séances intenses consécutives ; l'elliptique sert volontiers de récupération active le lendemain d'une séance de course difficile.")
+            appendLine()
+            appendLine("## Format de réponse OBLIGATOIRE")
+            appendLine("Rédige d'abord tes explications, puis termine par UN SEUL bloc ```json (sans commentaire à l'intérieur) respectant ce schéma :")
+            appendLine(GLOBAL_SCHEMA)
+            appendLine("sport vaut ELLIPTICAL ou RUNNING. duration_sec en secondes, distance_m en mètres (course uniquement, sinon null). target est un nombre.")
+        }
+    }
+
+    val GLOBAL_SCHEMA = """
+```json
+{
+  "plan_name": "string",
+  "summary": "string",
+  "weekly_structure": "string — organisation type : jours course / elliptique / renfo / repos",
+  "advice": ["..."],
+  "nutrition": ["..."],
+  "recovery": ["..."],
+  "progression": "string",
+  "warnings": ["..."],
+  "workouts": [
+    {
+      "name": "S1 – Lundi – Footing",
+      "sport": "RUNNING",
+      "week": 1,
+      "day": "Lundi",
+      "purpose": "string",
+      "steps": [
+        { "name": "Échauffement", "duration_sec": 600, "distance_m": null, "mode": "HR_ZONE", "target": 2 }
+      ]
+    },
+    {
+      "name": "S1 – Mercredi – Récup active",
+      "sport": "ELLIPTICAL",
+      "week": 1,
+      "day": "Mercredi",
+      "purpose": "string",
+      "steps": [
+        { "name": "Zone 2", "duration_sec": 1500, "distance_m": null, "mode": "HR_ZONE", "target": 2 }
+      ]
+    }
+  ]
+}
+```""".trimIndent()
+
     private fun fmt(v: Double) = if (v % 1.0 == 0.0) v.toInt().toString() else "%.1f".format(Locale.FRANCE, v)
 
     val SCHEMA = """

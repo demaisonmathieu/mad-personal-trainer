@@ -63,6 +63,8 @@ data class CoachStep(
 @Serializable
 data class CoachWorkout(
     val name: String = "",
+    /** Plan commun : "ELLIPTICAL" ou "RUNNING" */
+    val sport: String = "",
     val week: Int = 1,
     val day: String = "",
     val purpose: String = "",

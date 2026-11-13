@@ -48,6 +48,33 @@ object CoachParser {
             )
         }.filter { it.steps.isNotEmpty() }
 
+    /** Plan commun : chaque séance porte son sport (ou on le déduit des consignes). */
+    fun toGlobalWorkouts(plan: CoachPlan, resistanceMin: Int = 1, resistanceMax: Int = 15): List<Workout> =
+        plan.workouts.mapIndexed { i, cw ->
+            val sport = when (cw.sport.trim().uppercase()) {
+                "RUNNING", "RUN", "COURSE" -> Sport.RUNNING
+                "ELLIPTICAL", "ELLIPTIQUE" -> Sport.ELLIPTICAL
+                else -> if (cw.steps.any { it.mode.uppercase() == "PACE" || it.distance_m != null }) Sport.RUNNING else Sport.ELLIPTICAL
+            }
+            Workout(
+                name = cw.name.ifBlank { "Séance ${i + 1}" },
+                steps = cw.steps.map { s ->
+                    when {
+                        sport == Sport.RUNNING -> runStep(s)
+                        // Elliptique : la zone cardio est acceptée (résistance pilotée par le cardio)
+                        s.mode.trim().uppercase() in listOf("HR_ZONE", "ZONE") ->
+                            WorkoutStep(s.name, s.duration_sec.coerceIn(10, 3 * 3600), StepMode.HR_ZONE, s.target.coerceIn(1.0, 5.0))
+                        else -> ellipticalStep(s, resistanceMin, resistanceMax)
+                    }
+                },
+                planWeek = cw.week,
+                planDay = cw.day,
+                notes = cw.purpose,
+                fromCoach = true,
+                sport = sport,
+            )
+        }.filter { it.steps.isNotEmpty() }
+
     private fun ellipticalStep(s: CoachStep, rMin: Int, rMax: Int): WorkoutStep {
         val mode = when (s.mode.trim().uppercase()) {
             "POWER", "WATTS", "ERG" -> StepMode.POWER

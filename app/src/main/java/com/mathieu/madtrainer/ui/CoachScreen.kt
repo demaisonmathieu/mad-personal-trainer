@@ -73,15 +73,18 @@ import java.util.Locale
 @Composable
 fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
+    val globalPlan by vm.repo.globalPlan.collectAsStateWithLifecycle()
     val plans by vm.repo.plans.collectAsStateWithLifecycle()
     val coach by vm.coach.collectAsStateWithLifecycle()
     val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
-    val plan = plans[settings.sport]
+    // Plan commun ; à défaut, ancien plan propre au sport
+    val plan = globalPlan ?: plans[settings.sport]
     val context = LocalContext.current
     var editingProfile by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
     var showAiSettings by remember { mutableStateOf(false) }
     var showStrength by remember { mutableStateOf(false) }
+    val player by vm.player.collectAsStateWithLifecycle()
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -89,10 +92,10 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     ) {
         Text("Mon coach", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(!showStrength, { showStrength = false }, label = { Text("Plan ${settings.sport.label}") })
+            FilterChip(!showStrength, { showStrength = false }, label = { Text("Plan cardio commun") })
             FilterChip(showStrength, { showStrength = true }, label = { Text("Renfo & douleurs") })
         }
-        if (showStrength) {
+        if (showStrength || player.session != null) {
             StrengthSection(vm)
         } else {
 
@@ -130,7 +133,7 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (settings.sport == com.mathieu.madtrainer.data.Sport.RUNNING) "Générer mon programme de course" else "Générer mon programme elliptique",
+                    "Générer mon programme (course + elliptique)",
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(

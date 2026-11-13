@@ -80,6 +80,29 @@ class CoachTest {
     }
 
     @Test
+    fun parsesGlobalPlanWithSportPerWorkout() {
+        val response = """
+            ```json
+            { "plan_name": "Commun", "workouts": [
+              { "name": "Footing", "sport": "RUNNING", "week": 1, "day": "Lundi", "steps": [
+                { "name": "Z2", "duration_sec": 1800, "distance_m": null, "mode": "HR_ZONE", "target": 2 } ] },
+              { "name": "Récup", "sport": "ELLIPTICAL", "week": 1, "day": "Mercredi", "steps": [
+                { "name": "Z1", "duration_sec": 1200, "mode": "HR_ZONE", "target": 1 },
+                { "name": "Fin", "duration_sec": 300, "mode": "RESISTANCE", "target": 3 } ] },
+              { "name": "Sans sport", "week": 1, "day": "Samedi", "steps": [
+                { "name": "1 km", "duration_sec": 300, "distance_m": 1000, "mode": "PACE", "target": 300 } ] }
+            ] }
+            ```
+        """.trimIndent()
+        val w = CoachParser.toGlobalWorkouts(CoachParser.parse(response).getOrThrow())
+        assertEquals(com.mathieu.madtrainer.data.Sport.RUNNING, w[0].sport)
+        assertEquals(com.mathieu.madtrainer.data.Sport.ELLIPTICAL, w[1].sport)
+        assertEquals(StepMode.HR_ZONE, w[1].steps[0].mode)
+        assertEquals(StepMode.RESISTANCE, w[1].steps[1].mode)
+        assertEquals(com.mathieu.madtrainer.data.Sport.RUNNING, w[2].sport) // déduit de PACE / distance
+    }
+
+    @Test
     fun rejectsResponseWithoutJson() {
         assertTrue(CoachParser.parse("Désolé, je ne peux pas.").isFailure)
     }

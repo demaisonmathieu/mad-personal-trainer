@@ -37,6 +37,7 @@ import com.mathieu.madtrainer.data.StepPosition
 import com.mathieu.madtrainer.data.Workout
 import com.mathieu.madtrainer.data.WorkoutEngine
 import com.mathieu.madtrainer.data.WorkoutStep
+import com.mathieu.madtrainer.data.WorkoutConverter
 import com.mathieu.madtrainer.data.Sport
 import com.mathieu.madtrainer.run.RunTracker
 import kotlinx.coroutines.CoroutineScope
@@ -126,9 +127,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun buildCoachPrompt(): String {
         val strava = if (settingsStore.settings.value.includeStrava) StravaSummary.describe(repo.strava.value) else null
-        return CoachPrompt.build(
+        // Plan commun aux deux sports (+ jours de renfo réservés)
+        return CoachPrompt.buildGlobal(
             repo.profile.value, repo.sessions.value, equipment(),
-            otherActivities = strava, sport = settingsStore.settings.value.sport,
+            otherActivities = strava, strength = repo.strengthProfile.value,
         )
     }
 
@@ -221,10 +223,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val eq = equipment()
         CoachParser.parse(response).fold(
             onSuccess = { plan ->
-                val sport = settingsStore.settings.value.sport
-                val workouts = CoachParser.toWorkouts(plan, eq.resistanceMin, eq.resistanceMax, sport)
+                val workouts = CoachParser.toGlobalWorkouts(plan, eq.resistanceMin, eq.resistanceMax)
                 viewModelScope.launch {
-                    repo.savePlan(sport, SavedPlan(System.currentTimeMillis(), plan, response), workouts)
+                    repo.saveGlobalPlan(SavedPlan(System.currentTimeMillis(), plan, response), workouts)
                     _coach.value = CoachState.Done(workouts.size)
                 }
             },
@@ -377,6 +378,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSport(s: Sport) = settingsStore.update { it.copy(sport = s) }
 
+    /** « Ma semaine » : cocher / décocher une séance du plan. */
+    fun setDone(key: String, done: Boolean) = viewModelScope.launch { repo.setDone(key, done) }
+
     /** Programme running choisi, lancé depuis l'écran Course (permissions GPS d'abord). */
     private val _pendingRun = MutableStateFlow<Workout?>(null)
     val pendingRun: StateFlow<Workout?> = _pendingRun
@@ -386,6 +390,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Bouton ▶ d'un programme : elliptique = démarre ; running = prépare l'écran Course. */
+    /** « Faire sur l'autre machine » : crée la version convertie et la lance dans l'autre mode. */
+    fun runOnOtherSport(w: Workout): Workout {
+        val target = if (w.sport == Sport.RUNNING) Sport.ELLIPTICAL else Sport.RUNNING
+        val converted = WorkoutConverter.convert(w, target)
+        saveWorkout(converted)
+        setSport(target)
+        launchWorkout(converted)
+        return converted
+    }
+
     fun launchWorkout(w: Workout) {
         if (w.sport == Sport.RUNNING) _pendingRun.value = w else startSession(w)
     }
@@ -550,15 +564,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
             if (pos.index != appliedStep) applyStep(pos.index, w.steps[pos.index])
+            // Étape en zone cardio : la résistance suit la fréquence cardiaque (toutes les 15 s, après 20 s d'étape)
+            val step = w.steps[pos.index]
+            val hrNow = m.heartRate
+            if (step.mode == StepMode.HR_ZONE && hrNow != null && pos.stepElapsed >= 20 && pos.stepElapsed % 15 == 0) {
+                val maxR = bike.caps.value.resistanceRange?.let { bike.rawToLevel(it.max).toInt() }?.takeIf { it > 1 } ?: 15
+                val next = WorkoutConverter.resistanceForZone(hrZoneLevel, hrNow, step.target.toInt(), repo.profile.value.estimatedMaxHr, 1, maxR)
+                if (next != hrZoneLevel) {
+                    hrZoneLevel = next
+                    bike.setResistanceLevel(next.toDouble())
+                }
+            }
         }
         _session.value = s.copy(elapsed = e, position = pos, samples = s.samples + sample)
     }
+
+    /** Niveau de résistance courant pour les étapes pilotées par le cardio. */
+    private var hrZoneLevel = 5
 
     private fun applyStep(index: Int, step: WorkoutStep) {
         appliedStep = index
         when (step.mode) {
             StepMode.RESISTANCE -> bike.setResistanceLevel(step.target)
             StepMode.POWER -> bike.setTargetPower(step.target.toInt())
+            StepMode.HR_ZONE -> {
+                // Niveau de départ selon la zone ; ensuite la résistance suit le cardio de la montre
+                val maxR = bike.caps.value.resistanceRange?.let { bike.rawToLevel(it.max).toInt() }?.takeIf { it > 1 } ?: 15
+                hrZoneLevel = WorkoutConverter.startLevelForZone(step.target.toInt(), maxR)
+                bike.setResistanceLevel(hrZoneLevel.toDouble())
+            }
             else -> Unit
         }
     }

@@ -31,6 +31,18 @@ Au démarrage, l'app interroge la dernière Release GitHub (le dépôt doit êtr
 
 La première fois, Android demande d'autoriser MAD Personal Trainer à installer des applis : active l'option, reviens dans l'app et appuie de nouveau sur **Installer**. Le bouton **Vérifier** (onglet Vélo, carte Application) relance la recherche à la main.
 
+## Ma semaine et plan commun
+
+- **Plan commun** : le coach génère **une seule semaine** qui répartit course et elliptique (plus des jours réservés au renfo). L'elliptique sert de récupération active, ou de solution quand l'impact de la course est déconseillé.
+- **Séances en zones cardio** : elles fonctionnent sur les deux sports.
+  - En course : guidage vocal « accélère / ralentis ».
+  - Sur l'elliptique : la résistance s'ajuste automatiquement toutes les 15 s pour rester dans la zone (cardio de la montre).
+- **Faire sur l'autre machine** (menu ⋮ d'un programme, ou ⇄ dans Ma semaine) : convertit la séance (résistance, watts ou allure → zones cardio) et la lance dans l'autre mode.
+- **Onglet Semaine** :
+  - les séances du plan et du renfo, jour par jour, avec la coche « faite » (automatique quand la séance est enregistrée) et ▶ pour lancer directement dans le bon mode ;
+  - un bilan prévu / fait ;
+  - le réalisé de la semaine : minutes par sport, km, et temps par zone cardio tous sports confondus, avec le % passé en endurance facile.
+
 ## Mode Running
 
 Le sélecteur **Elliptique / Running**, en haut de l'app, bascule tous les onglets. On ne peut pas changer de mode pendant une séance.

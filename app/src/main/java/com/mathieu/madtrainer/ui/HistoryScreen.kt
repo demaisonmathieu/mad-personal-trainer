@@ -34,6 +34,14 @@ import com.mathieu.madtrainer.AppViewModel
 import com.mathieu.madtrainer.data.SessionRecord
 import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.Sport
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.mathieu.madtrainer.data.formatDuration
 import com.mathieu.madtrainer.data.formatPace
 import androidx.compose.foundation.Canvas
@@ -47,11 +55,13 @@ import java.util.Locale
 
 private val dateFmt = SimpleDateFormat("EEE d MMM yyyy · HH:mm", Locale.FRANCE)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(vm: AppViewModel) {
     val allSessions by vm.repo.sessions.collectAsStateWithLifecycle()
-    val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
-    val sessions = allSessions.filter { it.sport == settings.sport }
+    // Historique commun : tous les sports par défaut, filtre optionnel
+    var filter by remember { mutableStateOf<Sport?>(null) }
+    val sessions = allSessions.filter { filter == null || it.sport == filter }
     var selectedId by remember { mutableStateOf<String?>(null) }
     val selected = sessions.firstOrNull { it.id == selectedId }
 
@@ -69,7 +79,18 @@ fun HistoryScreen(vm: AppViewModel) {
     ) {
         item {
           Column {
-            SectionTitle("Historique — ${settings.sport.label}", Modifier.padding(top = 8.dp))
+            SectionTitle("Historique", Modifier.padding(top = 8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                FilterChip(filter == null, { filter = null }, label = { Text("Tous (${allSessions.size})") })
+                Sport.entries.forEach { sp ->
+                    FilterChip(
+                        filter == sp,
+                        { filter = sp },
+                        label = { Text("${sp.label} (${allSessions.count { it.sport == sp }})") },
+                        leadingIcon = { Icon(sportIcon(sp), null, Modifier.size(16.dp)) },
+                    )
+                }
+            }
             if (sessions.isNotEmpty()) {
                 val totalSec = sessions.sumOf { it.durationSec }
                 val totalKm = sessions.sumOf { it.distanceM } / 1000.0
@@ -93,6 +114,8 @@ fun HistoryScreen(vm: AppViewModel) {
         items(sessions, key = { it.id }) { s ->
             Card(Modifier.fillMaxWidth().clickable { selectedId = s.id }) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(sportIcon(s.sport), s.sport.label, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(dateFmt.format(Date(s.startedAt)), fontWeight = FontWeight.SemiBold)
                         Text(s.workoutName ?: "Séance libre", style = MaterialTheme.typography.bodySmall)
@@ -240,3 +263,6 @@ private fun RouteCard(samples: List<Sample>) {
         }
     }
 }
+
+fun sportIcon(sport: Sport): ImageVector =
+    if (sport == Sport.RUNNING) Icons.AutoMirrored.Filled.DirectionsRun else Icons.Filled.FitnessCenter

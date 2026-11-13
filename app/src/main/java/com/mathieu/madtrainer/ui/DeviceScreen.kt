@@ -337,7 +337,7 @@ private fun HeartRateCard(vm: AppViewModel, onNeedPermission: (() -> Unit) -> Un
                         }
                         val addr = settings.hrAddress
                         if (addr != null) {
-                            Button(onClick = { onNeedPermission { hr.connect(addr, settings.hrName) } }) { Text("Reconnecter") }
+                            Button(onClick = { onNeedPermission { hr.reconnectSaved() } }) { Text("Reconnecter") }
                         }
                     } else {
                         OutlinedButton(onClick = { hr.disconnect() }) { Text("Déconnecter") }

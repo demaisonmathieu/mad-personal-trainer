@@ -225,6 +225,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val update: StateFlow<UpdateState> = _update
 
     init {
+        hr.isBikeBusy = { bike.state.value == ConnState.CONNECTING || bike.state.value == ConnState.DISCOVERING }
         viewModelScope.launch { repo.load() }
         checkForUpdate()
         reconnectHeartRate()
@@ -394,11 +395,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun reconnectHeartRate() {
         val app = getApplication<Application>()
         val s = settingsStore.settings.value
-        val addr = s.hrAddress ?: return
+        if (s.hrName == null) return
         val perm = if (Build.VERSION.SDK_INT >= 31) Manifest.permission.BLUETOOTH_CONNECT else Manifest.permission.ACCESS_FINE_LOCATION
         if (ContextCompat.checkSelfPermission(app, perm) != PackageManager.PERMISSION_GRANTED) return
         if (!bike.isBluetoothEnabled) return
-        runCatching { hr.connect(addr, s.hrName) }
+        runCatching { hr.reconnectSaved() }
     }
 
     override fun onCleared() {

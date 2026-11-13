@@ -50,12 +50,31 @@ class HeartRateManager(
     val name: StateFlow<String?> = _name
     private val _bpm = MutableStateFlow<Int?>(null)
     val bpm: StateFlow<Int?> = _bpm
+    /** Connecté mais aucune mesure reçue au bout de quelques secondes. */
+    private val _noData = MutableStateFlow(false)
+    val noData: StateFlow<Boolean> = _noData
+    private var watchdog: Job? = null
+    private var subscribeAttempts = 0
+    private var framesLogged = 0
 
     private var gatt: BluetoothGatt? = null
     private var wantConnected = false
     private var address: String? = null
     private var scanStopJob: Job? = null
     private var staleJob: Job? = null
+
+    /** Appareils vus pendant les recherches : on se connecte avec l'objet du scan (adresse + type d'adresse). */
+    private val seenDevices = mutableMapOf<String, BluetoothDevice>()
+    /** Recherche en cours de la montre mémorisée (les montres changent d'adresse Bluetooth régulièrement). */
+    private var searchName: String? = null
+    private var searchJob: Job? = null
+    private var connectTimeoutJob: Job? = null
+    private var reconnectAttempts = 0
+
+    /** Renvoie true quand la connexion du vélo est en cours : on ne la perturbe pas. */
+    var isBikeBusy: () -> Boolean = { false }
+
+    private fun cleanName(n: String) = n.removeSuffix(" (connectée)").removeSuffix(" (appairée)").trim()
 
     /** Noms typiques de montres / capteurs cardio (beaucoup n'annoncent pas le service 0x180D). */
     private val hrNameHints = listOf(
@@ -80,6 +99,7 @@ class HeartRateManager(
         (connected + bonded).distinctBy { it.address }.forEach { d ->
             val n = runCatching { d.name }.getOrNull() ?: return@forEach
             if (d.type == BluetoothDevice.DEVICE_TYPE_CLASSIC) return@forEach
+            seenDevices[d.address] = d
             val tag = if (connected.any { it.address == d.address }) " (connectée)" else " (appairée)"
             addResult(ScanItem(d.address, n + tag, rssi = -50, ftms = isLikelyHr(n)))
         }
@@ -89,6 +109,17 @@ class HeartRateManager(
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val name = result.scanRecord?.deviceName ?: result.device.name ?: return
             val hasHr = result.scanRecord?.serviceUuids?.contains(ParcelUuid(FtmsUuids.HR_SERVICE)) == true
+            seenDevices[result.device.address] = result.device
+            // Reconnexion automatique : on retrouve la montre par son nom, quelle que soit son adresse du moment
+            val target = searchName
+            if (target != null && cleanName(name).equals(target, ignoreCase = true)) {
+                searchName = null
+                searchJob?.cancel()
+                stopScan()
+                log("Cardio : montre retrouvée (${result.device.address})")
+                connectDevice(result.device, cleanName(name))
+                return
+            }
             // On garde : service cardio annoncé, ou nom évocateur d'une montre / ceinture
             if (!hasHr && !isLikelyHr(name)) return
             addResult(ScanItem(result.device.address, name, result.rssi, ftms = hasHr))
@@ -122,22 +153,111 @@ class HeartRateManager(
         _scanning.value = false
     }
 
+    /** Connexion choisie dans la liste (appareil vu pendant la recherche). */
     fun connect(addr: String, displayName: String?) {
         stopScan()
+        val device = seenDevices[addr] ?: runCatching { adapter?.getRemoteDevice(addr) }.getOrNull() ?: return
+        reconnectAttempts = 0
+        connectDevice(device, cleanName(displayName ?: runCatching { device.name }.getOrNull() ?: addr))
+    }
+
+    /** Reconnexion à la montre mémorisée : on la recherche par son nom (son adresse a pu changer). */
+    fun reconnectSaved() {
+        val s = settingsStore.settings.value
+        val n = s.hrName ?: return
+        wantConnected = true
+        reconnectAttempts = 0
+        searchAndConnect(cleanName(n))
+    }
+
+    private fun searchAndConnect(name: String) {
+        val scanner = adapter?.bluetoothLeScanner ?: return
         close()
-        val device = runCatching { adapter?.getRemoteDevice(addr) }.getOrNull() ?: return
+        _name.value = name
+        _state.value = ConnState.CONNECTING
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            // On laisse d'abord le vélo terminer sa connexion
+            var waited = 0
+            while (isBikeBusy() && waited < 20_000) {
+                delay(500)
+                waited += 500
+            }
+            // Montre déjà connectée au téléphone (Zepp) : elle n'est pas visible au scan
+            addKnownDevices()
+            seenDevices.values.firstOrNull { d ->
+                runCatching { d.name }.getOrNull()?.let { cleanName(it).equals(name, true) } == true &&
+                    runCatching { context.getSystemService(BluetoothManager::class.java)?.getConnectedDevices(BluetoothProfile.GATT) }
+                        .getOrNull().orEmpty().any { it.address == d.address }
+            }?.let { d ->
+                log("Cardio : ${name} déjà reliée au téléphone, connexion directe")
+                connectDevice(d, name)
+                return@launch
+            }
+            log("Cardio : recherche de « $name »… (diffusion FC active sur la montre ?)")
+            searchName = name
+            if (!_scanning.value) {
+                val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+                scanner.startScan(null, settings, scanCallback)
+                _scanning.value = true
+            }
+            delay(15_000)
+            if (searchName != null) {
+                searchName = null
+                stopScan()
+                log("Cardio : « $name » introuvable")
+                onConnectFailed()
+            }
+        }
+    }
+
+    private fun connectDevice(device: BluetoothDevice, displayName: String) {
+        close()
         wantConnected = true
         firstBpmLogged = false
-        address = addr
-        _name.value = (displayName ?: device.name ?: addr).removeSuffix(" (connectée)").removeSuffix(" (appairée)")
-        settingsStore.update { it.copy(hrAddress = addr, hrName = _name.value) }
+        framesLogged = 0
+        address = device.address
+        _name.value = displayName
+        settingsStore.update { it.copy(hrAddress = device.address, hrName = displayName) }
         _state.value = ConnState.CONNECTING
-        log("Cardio : connexion à ${_name.value}…")
+        log("Cardio : connexion à $displayName…")
         gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+        // Android met ~30 s à abandonner une connexion impossible et sature la radio (le vélo décroche) :
+        // on coupe nous-mêmes au bout de 12 s.
+        connectTimeoutJob?.cancel()
+        connectTimeoutJob = scope.launch {
+            delay(12_000)
+            if (_state.value == ConnState.CONNECTING) {
+                log("Cardio : la montre ne répond pas")
+                close()
+                onConnectFailed()
+            }
+        }
+    }
+
+    /** Nouvel essai espacé (5 s, 15 s, 30 s), puis abandon pour ne pas perturber le vélo. */
+    private fun onConnectFailed() {
+        _state.value = ConnState.DISCONNECTED
+        if (!wantConnected) return
+        reconnectAttempts++
+        if (reconnectAttempts > 3) {
+            wantConnected = false
+            log("Cardio : abandon. Active la diffusion FC sur la montre puis appuie sur Reconnecter.")
+            return
+        }
+        val name = _name.value ?: settingsStore.settings.value.hrName ?: return
+        val wait = when (reconnectAttempts) { 1 -> 5_000L; 2 -> 15_000L; else -> 30_000L }
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            delay(wait)
+            if (wantConnected) searchAndConnect(cleanName(name))
+        }
     }
 
     fun disconnect() {
         wantConnected = false
+        searchName = null
+        searchJob?.cancel()
         close()
         _state.value = ConnState.DISCONNECTED
         setBpm(null)
@@ -150,6 +270,9 @@ class HeartRateManager(
     }
 
     private fun close() {
+        connectTimeoutJob?.cancel()
+        watchdog?.cancel()
+        _noData.value = false
         gatt?.let {
             runCatching { it.disconnect() }
             runCatching { it.close() }
@@ -182,63 +305,141 @@ class HeartRateManager(
             scope.launch {
                 if (g != gatt) return@launch
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    connectTimeoutJob?.cancel()
+                    reconnectAttempts = 0
                     _state.value = ConnState.DISCOVERING
                     delay(300)
                     g.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    log("Cardio : connexion perdue")
+                    log("Cardio : connexion perdue (status $status)")
                     close()
-                    _state.value = ConnState.DISCONNECTED
                     setBpm(null)
-                    val addr = address
-                    if (wantConnected && addr != null) {
-                        delay(3000)
-                        if (wantConnected && _state.value == ConnState.DISCONNECTED) connect(addr, _name.value)
-                    }
+                    onConnectFailed()
                 }
             }
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             scope.launch {
-                val ch = g.getService(FtmsUuids.HR_SERVICE)?.getCharacteristic(FtmsUuids.HR_MEASUREMENT)
+                val svc = g.getService(FtmsUuids.HR_SERVICE)
+                val ch = svc?.getCharacteristic(FtmsUuids.HR_MEASUREMENT)
                 if (ch == null) {
                     log("Cardio : pas de service fréquence cardiaque. Active la diffusion cardio sur la montre puis reconnecte.")
                     g.services.forEach { log("Cardio : service ${it.uuid}") }
                     disconnect()
                     return@launch
                 }
-                g.setCharacteristicNotification(ch, true)
-                val desc = ch.getDescriptor(FtmsUuids.CCCD)
-                if (desc != null) {
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        g.writeDescriptor(desc, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        run {
-                            desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            g.writeDescriptor(desc)
-                        }
-                    }
-                }
+                val props = ch.properties
+                log(
+                    "Cardio : service FC trouvé (notify=${props and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0}, " +
+                        "indicate=${props and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0}, " +
+                        "appairage=${bondLabel(g.device.bondState)})",
+                )
+                subscribeAttempts = 0
+                subscribe(g, ch)
                 _state.value = ConnState.CONNECTED
                 log("Cardio : ${_name.value} connecté, en attente des mesures")
+                startWatchdog(g, ch)
             }
         }
 
+        override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
+            scope.launch {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    log("Cardio : abonnement aux mesures accepté par la montre")
+                    return@launch
+                }
+                log("Cardio : abonnement refusé (code $status)")
+                // 5 / 15 / 137 = authentification ou chiffrement requis : on appaire puis on réessaie
+                if ((status == 5 || status == 15 || status == 137) && g.device.bondState != BluetoothDevice.BOND_BONDED) {
+                    log("Cardio : la montre exige un appairage, demande en cours (accepte la notification Android)…")
+                    runCatching { g.device.createBond() }
+                }
+                val ch = d.characteristic
+                if (subscribeAttempts < 3) {
+                    delay(4000)
+                    if (g == gatt) subscribe(g, ch)
+                }
+            }
+        }
         @Deprecated("Deprecated in Java")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
             if (Build.VERSION.SDK_INT < 33) {
                 @Suppress("DEPRECATION")
                 val v = ch.value?.copyOf() ?: return
-                scope.launch { FtmsParser.parseHeartRate(v)?.let { setBpm(it) } }
+                scope.launch { onHrFrame(v) }
             }
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
             val v = value.copyOf()
-            scope.launch { FtmsParser.parseHeartRate(v)?.let { setBpm(it) } }
+            scope.launch { onHrFrame(v) }
         }
+    }
+
+    private fun onHrFrame(v: ByteArray) {
+        if (framesLogged < 3) {
+            framesLogged++
+            log("Cardio : trame ${v.toHex()}")
+        }
+        val bpm = FtmsParser.parseHeartRate(v)
+        if (bpm == null) {
+            // valeur 0 = capteur pas encore stabilisé (montre mal ajustée ou mesure en cours)
+            if (framesLogged <= 3) log("Cardio : mesure vide (0 bpm) — montre bien serrée au poignet ?")
+            return
+        }
+        _noData.value = false
+        setBpm(bpm)
+    }
+
+    private fun subscribe(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+        subscribeAttempts++
+        g.setCharacteristicNotification(ch, true)
+        val desc = ch.getDescriptor(FtmsUuids.CCCD)
+        if (desc == null) {
+            log("Cardio : pas de descripteur de notification, on écoute quand même")
+            return
+        }
+        val value = if (ch.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) {
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        } else {
+            BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+        }
+        val started = if (Build.VERSION.SDK_INT >= 33) {
+            g.writeDescriptor(desc, value) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                desc.value = value
+                g.writeDescriptor(desc)
+            }
+        }
+        if (!started) log("Cardio : impossible d'envoyer la demande d'abonnement (essai $subscribeAttempts)")
+    }
+
+    /** Si aucune mesure n'arrive, on réessaie l'abonnement puis on prévient l'utilisateur. */
+    private fun startWatchdog(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+        watchdog?.cancel()
+        _noData.value = false
+        watchdog = scope.launch {
+            delay(8000)
+            if (_bpm.value != null || g != gatt) return@launch
+            log("Cardio : aucune mesure après 8 s, nouvel abonnement…")
+            subscribe(g, ch)
+            delay(8000)
+            if (_bpm.value != null || g != gatt) return@launch
+            _noData.value = true
+            log(
+                "Cardio : toujours aucune mesure. Vérifie que la diffusion FC est active sur la montre (écran laissé ouvert). " +
+                    "Si tu as choisi l'entrée « (connectée) », essaie plutôt celle qui apparaît pendant la diffusion.",
+            )
+        }
+    }
+
+    private fun bondLabel(state: Int) = when (state) {
+        BluetoothDevice.BOND_BONDED -> "oui"
+        BluetoothDevice.BOND_BONDING -> "en cours"
+        else -> "non"
     }
 
     fun release() {

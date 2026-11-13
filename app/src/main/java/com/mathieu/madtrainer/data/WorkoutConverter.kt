@@ -35,7 +35,8 @@ object WorkoutConverter {
     }
 
     /** Intensité relative 0..1 de l'étape parmi les étapes « spécifiques » de la séance → zone 2 à 4 (5 si très court et intense). */
-    private fun zoneFor(s: WorkoutStep, all: List<WorkoutStep>): Int {
+    /** Zone cardio équivalente d'une étape, selon son intensité relative dans la séance. */
+    fun zoneFor(s: WorkoutStep, all: List<WorkoutStep>): Int {
         fun intensity(x: WorkoutStep): Double = when (x.mode) {
             StepMode.PACE -> 1000.0 / x.target.coerceAtLeast(1.0) // plus l'allure est petite, plus c'est intense
             else -> x.target
@@ -58,8 +59,11 @@ object WorkoutConverter {
      * Pilotage de l'elliptique par le cardio : nouveau niveau de résistance pour rester dans la zone.
      * Ajustement d'un niveau à la fois, avec une marge de 3 bpm pour éviter de « pomper ».
      */
-    fun resistanceForZone(currentLevel: Int, hr: Int, zone: Int, maxHr: Int, min: Int = 1, max: Int = 15): Int {
-        val r = RunEngine.zoneRange(zone, maxHr)
+    fun resistanceForZone(currentLevel: Int, hr: Int, zone: Int, maxHr: Int, min: Int = 1, max: Int = 15): Int =
+        resistanceForZone(currentLevel, hr, zone, HrZones.fromMax(maxHr), min, max)
+
+    fun resistanceForZone(currentLevel: Int, hr: Int, zone: Int, zones: HrZones, min: Int = 1, max: Int = 15): Int {
+        val r = zones.range(zone)
         return when {
             hr > r.last + 3 -> (currentLevel - 1).coerceIn(min, max)
             hr < r.first - 3 -> (currentLevel + 1).coerceIn(min, max)

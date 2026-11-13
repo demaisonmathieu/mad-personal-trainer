@@ -40,6 +40,10 @@ import com.mathieu.madtrainer.data.WorkoutEngine
 import com.mathieu.madtrainer.data.WorkoutStep
 import com.mathieu.madtrainer.data.WorkoutConverter
 import com.mathieu.madtrainer.data.Sport
+import com.mathieu.madtrainer.data.ProgressReport
+import com.mathieu.madtrainer.data.SessionReport
+import com.mathieu.madtrainer.data.VoiceCoach
+import com.mathieu.madtrainer.data.WeekPlanner
 import com.mathieu.madtrainer.run.RunTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +85,13 @@ data class StrengthPlayerState(
     val elapsed: Int = 0,
 ) {
     val step: PlayerStep? get() = steps.getOrNull(index)
+}
+
+/** Analyse IA du rapport de séance. */
+sealed interface ReportAiState {
+    data object Idle : ReportAiState
+    data class Working(val sessionId: String) : ReportAiState
+    data class Error(val sessionId: String, val message: String) : ReportAiState
 }
 
 data class LiveSession(
@@ -200,11 +211,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val after = System.currentTimeMillis() / 1000 - 90L * 24 * 3600
                 val acts = StravaClient.activities(token, after)
                 val weight = runCatching { StravaClient.athleteWeight(token) }.getOrNull()
-                val cache = repo.strava.value.copy(weightKg = weight, lastSync = System.currentTimeMillis(), activities = acts)
+                val zones = runCatching { StravaClient.hrZoneLows(token) }.getOrNull()
+                val cache = repo.strava.value.copy(weightKg = weight, lastSync = System.currentTimeMillis(), activities = acts, hrZoneLows = zones)
                 repo.saveStrava(cache)
+                // Zones déjà reprises de Strava : on les tient à jour
+                val p = repo.profile.value
+                if (zones != null && p.hrZonesSource == "Strava" && p.hrZoneLows != zones) repo.saveProfile(p.copy(hrZoneLows = zones))
                 cache
             }.onSuccess { c ->
-                _strava.value = StravaState.Ok("${c.activities.size} activités synchronisées")
+                _strava.value = StravaState.Ok("${c.activities.size} activités synchronisées" + if (c.hrZoneLows != null) " · zones cardio récupérées" else "")
             }.onFailure { _strava.value = StravaState.Error(it.message ?: "Synchronisation impossible") }
         }
     }
@@ -213,6 +228,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val w = repo.strava.value.weightKg ?: return
         saveProfile(repo.profile.value.copy(weightKg = w))
     }
+
+    /** Utilise les zones cardio de Strava partout dans l'app (séances en zone, pilotage de l'elliptique, coach). */
+    fun useStravaHrZones() {
+        val z = repo.strava.value.hrZoneLows ?: return
+        saveProfile(repo.profile.value.copy(hrZoneLows = z, hrZonesSource = "Strava"))
+    }
+
+    /** Revient aux zones calculées sur la FC max. */
+    fun resetHrZones() = saveProfile(repo.profile.value.copy(hrZoneLows = null, hrZonesSource = null))
 
     fun disconnectStrava() {
         settingsStore.update { it.copy(stravaAccess = "", stravaRefresh = "", stravaExpiresAt = 0) }
@@ -432,7 +456,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         RunTracker.init(app)
         RunTracker.heartRate = { hr.bpm.value }
-        RunTracker.maxHr = { repo.profile.value.estimatedMaxHr }
+        RunTracker.hrZones = { repo.profile.value.hrZones }
+        RunTracker.voiceEnabled = { settingsStore.settings.value.voice }
+        RunTracker.hrAlertsEnabled = { settingsStore.settings.value.hrAlerts }
         RunTracker.weightKg = { repo.profile.value.weightKg }
         RunTracker.onFinished = { rec -> appScope.launch { repo.saveSession(rec) } }
     }
@@ -509,6 +535,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             position = workout?.let { WorkoutEngine.position(it, 0) },
         )
         bike.startMachine()
+        hrAlarm.reset()
+        RunTracker.ensureTts()
+        RunTracker.speak(if (workout == null) "C'est parti, séance libre." else "C'est parti pour ${workout.name}.")
         workout?.steps?.firstOrNull()?.let { applyStep(0, it) }
         ticker?.cancel()
         ticker = viewModelScope.launch {
@@ -527,8 +556,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // ré-appliquer la cible de l'étape courante
             val w = s.workout
             val p = s.position
-            if (w != null && p != null && !p.finished) applyStep(p.index, w.steps[p.index])
+            if (w != null && p != null && !p.finished) applyStep(p.index, w.steps[p.index], announce = false)
+            RunTracker.speak("Reprise")
         } else {
+            RunTracker.speak("Pause")
             bike.pauseMachine()
         }
         _session.value = s.copy(paused = !s.paused)
@@ -551,8 +582,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         bike.stopMachine()
         _session.value = LiveSession()
         if (save && s.elapsed >= 10) {
-            val rec = WorkoutEngine.summarize(s.startedAt, s.elapsed, s.workout?.name, s.samples)
+            val rec = WorkoutEngine.summarize(s.startedAt, s.elapsed, s.workout?.name, s.samples, s.workout?.steps.orEmpty())
             _lastFinished.value = rec
+            RunTracker.speak(
+                "Séance terminée. ${com.mathieu.madtrainer.data.spokenDuration(s.elapsed)}" +
+                    (if (rec.kcal > 0) ", ${rec.kcal} kilocalories" else "") + ". Ton rapport de progression est prêt.",
+            )
             viewModelScope.launch { repo.saveSession(rec) }
         }
     }
@@ -573,6 +608,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             speed = m.speedKmh,
             hr = m.heartRate,
             resistance = m.resistanceRaw?.let { bike.rawToLevel(it) },
+            step = s.workout?.let { WorkoutEngine.position(it, e).index },
             distanceM = m.distanceM,
             kcal = m.totalKcal,
         )
@@ -586,26 +622,109 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 return
             }
             if (pos.index != appliedStep) applyStep(pos.index, w.steps[pos.index])
+            // Coach vocal : préavis 30 s avant l'étape suivante, alerte si le cardio est trop haut
+            val cur = w.steps[pos.index]
+            if (VoiceCoach.shouldPreWarn(cur, pos.stepElapsed)) {
+                RunTracker.vibrate(1)
+                RunTracker.speak(VoiceCoach.preStepText(w.steps.getOrNull(pos.index + 1), repo.profile.value.hrZones))
+            }
+            checkHrAlarm(e, m.heartRate, cur, w.steps)
             // Étape en zone cardio : la résistance suit la fréquence cardiaque (toutes les 15 s, après 20 s d'étape)
             val step = w.steps[pos.index]
             val hrNow = m.heartRate
             if (step.mode == StepMode.HR_ZONE && hrNow != null && pos.stepElapsed >= 20 && pos.stepElapsed % 15 == 0) {
                 val maxR = bike.caps.value.resistanceRange?.let { bike.rawToLevel(it.max).toInt() }?.takeIf { it > 1 } ?: 15
-                val next = WorkoutConverter.resistanceForZone(hrZoneLevel, hrNow, step.target.toInt(), repo.profile.value.estimatedMaxHr, 1, maxR)
+                val next = WorkoutConverter.resistanceForZone(hrZoneLevel, hrNow, step.target.toInt(), repo.profile.value.hrZones, 1, maxR)
                 if (next != hrZoneLevel) {
                     hrZoneLevel = next
                     bike.setResistanceLevel(next.toDouble())
                 }
             }
         }
+        if (w == null) checkHrAlarm(e, m.heartRate, null, emptyList())
         _session.value = s.copy(elapsed = e, position = pos, samples = s.samples + sample)
+    }
+
+    private val hrAlarm = VoiceCoach.HrAlarm()
+
+    private fun checkHrAlarm(t: Int, hr: Int?, step: WorkoutStep?, steps: List<WorkoutStep>) {
+        if (!settingsStore.settings.value.hrAlerts) return
+        if (hrAlarm.update(t, hr, VoiceCoach.hrCeiling(step, steps, repo.profile.value.hrZones))) {
+            RunTracker.vibrate(2)
+            RunTracker.speak(VoiceCoach.hrAlertText(hr ?: 0, running = false))
+        }
+    }
+
+    fun setVoice(on: Boolean) = settingsStore.update { it.copy(voice = on) }
+    fun setHrAlerts(on: Boolean) = settingsStore.update { it.copy(hrAlerts = on) }
+
+    // ------------------------------------------------------------ rapport de progression
+
+    private val _reportAi = MutableStateFlow<ReportAiState>(ReportAiState.Idle)
+    val reportAi: StateFlow<ReportAiState> = _reportAi
+
+    fun progressReport(rec: SessionRecord): ProgressReport =
+        SessionReport.build(rec, repo.sessions.value, repo.profile.value.hrZones)
+
+    fun buildReportPrompt(rec: SessionRecord): String {
+        val p = repo.profile.value
+        val profileText = buildString {
+            appendLine("- ${p.sex.label}, ${p.age} ans, ${p.weightKg} kg, ${p.heightCm} cm")
+            appendLine("- Objectif : ${p.goal.label}, niveau : ${p.level.label}, ${p.sessionsPerWeek} séances par semaine")
+            if (p.constraints.isNotBlank()) appendLine("- Contraintes : ${p.constraints.trim()}")
+            if (p.runningInfo.isNotBlank()) appendLine("- Repères running : ${p.runningInfo.trim()}")
+        }
+        val planText = repo.globalPlan.value?.let { plan ->
+            val ws = repo.workouts.value.filter { it.id in plan.workoutIds }
+            val maxWeek = ws.maxOfOrNull { it.planWeek ?: 1 } ?: 1
+            val week = WeekPlanner.currentWeek(plan.createdAt, rec.startedAt, maxWeek)
+            val list = ws.filter { (it.planWeek ?: 1) == week }
+            if (list.isEmpty()) null else "Semaine $week sur $maxWeek :\n" + list.joinToString("\n") { w ->
+                "- ${w.planDay ?: "?"} : ${w.name} (${w.sport.label}, ${w.totalSec / 60} min)"
+            }
+        }
+        return SessionReport.prompt(rec, progressReport(rec), repo.sessions.value, p.hrZones, profileText, planText)
+    }
+
+    /** Analyse IA via l'API (clé requise) ; le texte est enregistré avec la séance. */
+    fun generateReport(rec: SessionRecord) {
+        val s = settingsStore.settings.value
+        if (s.anthropicKey.isBlank()) {
+            _reportAi.value = ReportAiState.Error(rec.id, "Pas de clé API : copie le prompt, puis colle la réponse de l'IA")
+            return
+        }
+        if (_reportAi.value is ReportAiState.Working) return
+        _reportAi.value = ReportAiState.Working(rec.id)
+        val prompt = buildReportPrompt(rec)
+        viewModelScope.launch {
+            runCatching { AnthropicClient.complete(s.anthropicKey, s.anthropicModel, prompt, maxTokens = 2000) }
+                .onSuccess { saveReport(rec, it) }
+                .onFailure { _reportAi.value = ReportAiState.Error(rec.id, it.message ?: "Échec de l'appel à l'API") }
+        }
+    }
+
+    /** Réponse de l'IA collée à la main. */
+    fun saveReport(rec: SessionRecord, text: String) {
+        val clean = text.trim()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val current = repo.sessions.value.firstOrNull { it.id == rec.id } ?: rec
+            repo.saveSession(current.copy(aiReport = clean))
+            if (_lastFinished.value?.id == rec.id) _lastFinished.value = _lastFinished.value?.copy(aiReport = clean)
+            _reportAi.value = ReportAiState.Idle
+        }
     }
 
     /** Niveau de résistance courant pour les étapes pilotées par le cardio. */
     private var hrZoneLevel = 5
 
-    private fun applyStep(index: Int, step: WorkoutStep) {
+    private fun applyStep(index: Int, step: WorkoutStep, announce: Boolean = true) {
         appliedStep = index
+        if (announce) {
+            val w = _session.value.workout
+            RunTracker.vibrate(3)
+            RunTracker.speak(VoiceCoach.stepText(step, index, w?.steps?.size ?: 1, repo.profile.value.hrZones))
+        }
         when (step.mode) {
             StepMode.RESISTANCE -> bike.setResistanceLevel(step.target)
             StepMode.POWER -> bike.setTargetPower(step.target.toInt())

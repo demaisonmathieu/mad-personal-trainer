@@ -1,5 +1,7 @@
 package com.mathieu.madtrainer.run
 
+import com.mathieu.madtrainer.data.HrZones
+import com.mathieu.madtrainer.data.VoiceCoach
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -79,7 +81,7 @@ object RunTracker {
 
     /** Fournisseurs injectés par l'app. */
     var heartRate: () -> Int? = { null }
-    var maxHr: () -> Int = { 180 }
+    var hrZones: () -> HrZones = { HrZones.fromMax(180) }
     var weightKg: () -> Double = { 75.0 }
     var onFinished: (SessionRecord) -> Unit = {}
 
@@ -95,6 +97,12 @@ object RunTracker {
     private var nextKmAnnounce = 1000.0
     private var lastGuidanceAt = 0L
     private var oneMinuteWarned = false
+    private var distanceWarned = false
+    private val hrAlarm = VoiceCoach.HrAlarm()
+
+    /** Coach vocal activé (réglage global) */
+    var voiceEnabled: () -> Boolean = { true }
+    var hrAlertsEnabled: () -> Boolean = { true }
 
     fun init(context: Context) {
         if (::app.isInitialized) return
@@ -226,6 +234,8 @@ object RunTracker {
         recentPoints.clear()
         nextKmAnnounce = 1000.0
         oneMinuteWarned = false
+        distanceWarned = false
+        hrAlarm.reset()
         lastFix = null
         _state.value = RunState(
             running = true,
@@ -300,6 +310,7 @@ object RunTracker {
             distanceM = s.distanceM.roundToInt(),
             speed = current?.let { 3600.0 / it },
             paceSecPerKm = current,
+            step = s.workout?.let { s.stepIndex },
             lat = lastLat,
             lon = lastLon,
         )
@@ -335,9 +346,25 @@ object RunTracker {
             oneMinuteWarned = true
             speak("Encore une minute")
         }
+        // Préavis avant l'étape suivante : 30 s avant (étape en durée) ou 100 m avant (étape en distance)
+        val nextStep = w.steps.getOrNull(ns.stepIndex + 1)
+        if (VoiceCoach.shouldPreWarn(step, ns.stepElapsed)) {
+            vibrate(1)
+            speak(VoiceCoach.preStepText(nextStep, hrZones()))
+        } else if (VoiceCoach.shouldPreWarnDistance(step, ns.stepDistance, distanceWarned)) {
+            distanceWarned = true
+            vibrate(1)
+            speak(VoiceCoach.preStepText(nextStep, hrZones(), distance = true))
+        }
+        // Cardio trop haut pour l'étape (maintenu 10 s, au plus une alerte par minute)
+        if (hrAlertsEnabled() && hrAlarm.update(ns.elapsed, hr, VoiceCoach.hrCeiling(step, w.steps, hrZones()))) {
+            vibrate(2)
+            speak(VoiceCoach.hrAlertText(hr ?: 0, running = true))
+            lastGuidanceAt = now
+        }
         // Consignes « accélère / ralentis » au plus toutes les 60 s, après 30 s dans l'étape
         if (ns.stepElapsed >= 30 && now - lastGuidanceAt > 60_000) {
-            when (RunEngine.guidance(step, current, hr, maxHr())) {
+            when (RunEngine.guidance(step, current, hr, hrZones())) {
                 RunEngine.Guidance.FASTER -> {
                     lastGuidanceAt = now
                     vibrate(2)
@@ -366,6 +393,7 @@ object RunTracker {
             return
         }
         oneMinuteWarned = false
+        distanceWarned = false
         lastGuidanceAt = System.currentTimeMillis()
         _state.value = s.copy(stepIndex = next, stepElapsed = 0, stepDistance = 0.0)
         announceStep(w.steps[next], next)
@@ -377,7 +405,7 @@ object RunTracker {
         val count = w?.steps?.size ?: 0
         speak(
             "Étape ${index + 1} sur $count. ${step.name}. " +
-                "${RunEngine.stepLengthText(step, spoken = true)}, ${RunEngine.targetText(step, maxHr(), spoken = true)}.",
+                "${RunEngine.stepLengthText(step, spoken = true)}, ${RunEngine.targetText(step, hrZones(), spoken = true)}.",
         )
     }
 
@@ -394,13 +422,14 @@ object RunTracker {
             samples = s.samples,
             sport = Sport.RUNNING,
             avgPaceSecPerKm = RunEngine.pace(s.distanceM, s.elapsed.toDouble()),
+            steps = s.workout?.steps.orEmpty(),
         )
     }
 
     // ------------------------------------------------------------------ voix & vibrations
 
     fun speak(text: String) {
-        if (!ttsReady) return
+        if (!ttsReady || !voiceEnabled()) return
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "run-${System.nanoTime()}")
     }
 

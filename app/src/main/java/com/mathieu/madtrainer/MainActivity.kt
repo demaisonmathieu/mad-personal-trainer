@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.IconButton
+import androidx.compose.runtime.remember
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -138,6 +144,29 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                                     Text(sp.label, maxLines = 1)
                                 }
                             }
+                        }
+                    }
+                    // Coach vocal : annonces, préavis 30 s, alertes cardio
+                    Box {
+                        var voiceMenu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { voiceMenu = true }) {
+                            Icon(
+                                if (settings.voice) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                                "Coach vocal",
+                                tint = if (settings.voice) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Coach vocal (étapes, préavis 30 s)") },
+                                trailingIcon = { Checkbox(checked = settings.voice, onCheckedChange = null) },
+                                onClick = { vm.setVoice(!settings.voice) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Alerte cardio trop élevé") },
+                                trailingIcon = { Checkbox(checked = settings.hrAlerts, onCheckedChange = null) },
+                                onClick = { vm.setHrAlerts(!settings.hrAlerts) },
+                            )
                         }
                     }
                     // Historique commun aux deux sports : bouton dédié, hors barre du bas

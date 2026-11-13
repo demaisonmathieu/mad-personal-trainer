@@ -110,7 +110,10 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
             }
         }
 
-        summary?.let { SummaryCard(it) { vm.dismissSummary() } }
+        summary?.let {
+            SummaryCard(it) { vm.dismissSummary() }
+            SessionReportCard(it, vm)
+        }
 
         LiveMetrics(metrics, session, vm)
 

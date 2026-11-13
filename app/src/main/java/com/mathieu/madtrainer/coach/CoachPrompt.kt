@@ -31,7 +31,7 @@ object CoachPrompt {
         val run = sport == Sport.RUNNING
         val date = SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE).format(now)
         val maxHr = p.estimatedMaxHr
-        fun zone(lo: Double, hi: Double) = "${(maxHr * lo).roundToInt()}–${(maxHr * hi).roundToInt()} bpm"
+        val zones = p.hrZones
 
         return buildString {
             appendLine(
@@ -71,7 +71,10 @@ object CoachPrompt {
                 appendLine("- Contrôle par puissance : ${equipment.powerControl}.")
             }
             appendLine("- Cardio : " + if (equipment.hasHeartRate) "disponible en direct (montre connectée)." else "pas forcément disponible pendant la séance.")
-            appendLine("- Zones cardio indicatives : Z1 ${zone(0.50, 0.60)}, Z2 ${zone(0.60, 0.70)}, Z3 ${zone(0.70, 0.80)}, Z4 ${zone(0.80, 0.90)}, Z5 ${zone(0.90, 1.0)}.")
+            appendLine(
+                "- Zones cardio " + (if (zones.custom) "personnelles (${p.hrZonesSource ?: "personnalisées"})" else "indicatives") +
+                    " : " + (1..5).joinToString(", ") { z -> zones.range(z).let { "Z$z ${it.first}–${it.last} bpm" } } + ".",
+            )
             appendLine()
 
             appendLine("## Historique récent")

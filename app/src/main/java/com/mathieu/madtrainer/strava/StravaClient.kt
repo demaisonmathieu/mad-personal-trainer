@@ -104,6 +104,9 @@ object StravaClient {
         return o["weight"]?.jsonPrimitive?.doubleOrNull?.takeIf { it > 0 }
     }
 
+    /** Zones cardio réglées dans Strava (bornes basses des zones 1 à 5), null si indisponibles. */
+    suspend fun hrZoneLows(accessToken: String): List<Int>? = StravaZones.parseHrLows(get("/athlete/zones", accessToken))
+
     /** Activités depuis [afterEpochSec], au plus [maxPages] pages de 100. */
     suspend fun activities(accessToken: String, afterEpochSec: Long, maxPages: Int = 3): List<StravaActivity> {
         val all = mutableListOf<StravaActivity>()

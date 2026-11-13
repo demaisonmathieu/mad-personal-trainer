@@ -65,6 +65,19 @@ Le sélecteur **Elliptique / Running**, en haut de l'app, bascule tous les ongle
 
 Autorisations demandées au premier départ : localisation précise et notifications.
 
+## Coach vocal et rapport de progression
+
+- **Coach vocal** (elliptique et course, bouton 🔊 en haut de l'écran) :
+  - annonce de chaque étape avec sa consigne ;
+  - **préavis 30 secondes** avant l'étape suivante (ou 100 m avant pour une étape en distance) ;
+  - **alerte « cardio trop élevé pour l'exercice »** si le cardio reste 10 s au-dessus du plafond de l'étape (au plus une alerte par minute). Le plafond est la zone visée + 8 bpm pour une étape en zone, et une zone de marge au-dessus de l'intensité de l'étape pour les autres (échauffement / récup : fin de zone 3).
+  - Le menu du bouton permet de couper la voix ou seulement les alertes cardio.
+- **Rapport de progression** en fin de séance (et dans l'historique) :
+  - respect des consignes étape par étape, temps par zone cardio, dérive cardiaque ;
+  - comparaison avec la dernière séance du même programme (ou une séance comparable) : puissance ou allure, cardio, **efficacité cardio** (effort par battement) sur les 5 dernières ;
+  - records (plus longue séance, meilleure allure ou puissance) et volume de la semaine ;
+  - **Analyse du coach IA** : *Analyser ma séance* (avec la clé API), ou *Prompt* puis *Coller la réponse*. L'analyse est enregistrée avec la séance.
+
 ## Coach personnel (IA)
 
 Onglet **Coach** :
@@ -107,6 +120,8 @@ Configuration, à faire une seule fois :
    - **Authorization Callback Domain** : `localhost`
 2. Dans l'app, ouvre *Configurer*, colle le **Client ID** et le **Client Secret**, puis appuie sur *Se connecter avec Strava*. Autorise l'accès aux activités.
 3. *Synchroniser* rafraîchit les données. L'interrupteur *Inclure dans le prompt* permet d'exclure Strava du prompt.
+
+**Zones cardio** : la synchronisation récupère aussi tes zones de fréquence cardiaque Strava. *Utiliser* les applique partout : séances en zone (course et elliptique), pilotage de la résistance, temps par zone de *Ma semaine* et prompt du coach. Elles restent ensuite à jour à chaque synchronisation. *Réinitialiser* (carte Profil) revient aux zones calculées sur la FC max (50 à 100 %).
 
 ## Cardio : montre ou ceinture
 

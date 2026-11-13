@@ -37,12 +37,14 @@ object WeekPlanner {
     }
 
     /** Minutes passées dans chaque zone cardio (1..5) à partir des échantillons (1/s). */
-    fun minutesPerZone(sessions: List<SessionRecord>, maxHr: Int): IntArray {
+    fun minutesPerZone(sessions: List<SessionRecord>, maxHr: Int): IntArray = minutesPerZone(sessions, HrZones.fromMax(maxHr))
+
+    fun minutesPerZone(sessions: List<SessionRecord>, zones: HrZones): IntArray {
         val sec = IntArray(5)
         sessions.forEach { s ->
             s.samples.forEach { p ->
                 val hr = p.hr ?: return@forEach
-                if (hr > 0) sec[RunEngine.zoneOf(hr, maxHr) - 1]++
+                if (hr > 0) sec[zones.zoneOf(hr) - 1]++
             }
         }
         return IntArray(5) { (sec[it] + 30) / 60 }

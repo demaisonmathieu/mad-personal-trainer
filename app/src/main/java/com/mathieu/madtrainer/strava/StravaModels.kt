@@ -38,7 +38,29 @@ data class StravaCache(
     val weightKg: Double? = null,
     val lastSync: Long = 0,
     val activities: List<StravaActivity> = emptyList(),
+    /** Zones cardio du profil Strava (bornes basses des zones 1 à 5) */
+    val hrZoneLows: List<Int>? = null,
 )
+
+/** Réponse de GET /athlete/zones (seule la partie cardio nous intéresse). */
+@Serializable
+data class StravaZoneRange(val min: Int = 0, val max: Int = -1)
+
+@Serializable
+data class StravaHrZones(val custom_zones: Boolean = false, val zones: List<StravaZoneRange> = emptyList())
+
+@Serializable
+data class StravaAthleteZones(val heart_rate: StravaHrZones? = null)
+
+object StravaZones {
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; coerceInputValues = true }
+
+    /** Bornes basses des 5 zones cardio, ou null si absentes / inattendues. */
+    fun parseHrLows(text: String): List<Int>? = runCatching {
+        val z = json.decodeFromString(StravaAthleteZones.serializer(), text).heart_rate?.zones.orEmpty()
+        com.mathieu.madtrainer.data.HrZones.lowsFromStrava(z.map { it.min })
+    }.getOrNull()
+}
 
 /** Libellés français des principaux sports Strava. */
 fun sportLabel(sport: String): String = when (sport) {

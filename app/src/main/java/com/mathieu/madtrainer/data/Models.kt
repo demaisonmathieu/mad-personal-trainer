@@ -66,6 +66,8 @@ data class Sample(
     val lat: Double? = null,
     val lon: Double? = null,
     val paceSecPerKm: Int? = null,
+    /** Index de l'étape du programme en cours */
+    val step: Int? = null,
 )
 
 @Serializable
@@ -84,4 +86,8 @@ data class SessionRecord(
     val sport: Sport = Sport.ELLIPTICAL,
     val avgPaceSecPerKm: Int? = null,
     val maxHr: Int? = null,
+    /** Étapes prévues (pour mesurer le respect des consignes) */
+    val steps: List<WorkoutStep> = emptyList(),
+    /** Analyse de la séance rédigée par l'IA */
+    val aiReport: String? = null,
 )

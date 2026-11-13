@@ -31,6 +31,7 @@ object WorkoutEngine {
         durationSec: Int,
         workoutName: String?,
         samples: List<Sample>,
+        steps: List<WorkoutStep> = emptyList(),
     ): SessionRecord {
         val powers = samples.mapNotNull { it.power }
         val cad = samples.mapNotNull { it.cadence }.filter { it > 0 }
@@ -48,6 +49,8 @@ object WorkoutEngine {
             avgCadence = if (cad.isEmpty()) 0.0 else cad.average(),
             avgHr = if (hrs.isEmpty()) null else hrs.average().roundToInt(),
             samples = samples,
+            steps = steps,
+            maxHr = hrs.maxOrNull(),
         )
     }
 

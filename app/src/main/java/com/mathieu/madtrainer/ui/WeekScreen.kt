@@ -1,5 +1,6 @@
 package com.mathieu.madtrainer.ui
 
+import com.mathieu.madtrainer.data.HrZones
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
@@ -164,7 +165,7 @@ fun WeekScreen(
                     Button(onClick = onOpenCoach) { Text("Aller au coach") }
                 }
             }
-            ThisWeekLoad(vm, sessions, profile.estimatedMaxHr)
+            ThisWeekLoad(vm, sessions, profile.hrZones)
         } else {
             val start = WeekPlanner.weekStart(ref, week)
             val end = start + WeekPlanner.WEEK_MS
@@ -332,7 +333,7 @@ fun WeekScreen(
             }
 
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
-            ThisWeekLoad(vm, sessions, profile.estimatedMaxHr)
+            ThisWeekLoad(vm, sessions, profile.hrZones)
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -461,7 +462,7 @@ private fun WeekCard(
 
 /** Charge réelle de la semaine calendaire en cours (tous sports) : temps par sport et par zone cardio. */
 @Composable
-private fun ThisWeekLoad(vm: AppViewModel, sessions: List<com.mathieu.madtrainer.data.SessionRecord>, maxHr: Int) {
+private fun ThisWeekLoad(vm: AppViewModel, sessions: List<com.mathieu.madtrainer.data.SessionRecord>, maxHr: HrZones) {
     val monday = WeekPlanner.mondayOf(System.currentTimeMillis())
     val thisWeek = sessions.filter { it.startedAt >= monday }
     val logs by vm.repo.painLogs.collectAsStateWithLifecycle()

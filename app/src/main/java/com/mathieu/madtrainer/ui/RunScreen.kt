@@ -1,5 +1,6 @@
 package com.mathieu.madtrainer.ui
 
+import com.mathieu.madtrainer.data.HrZones
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -86,7 +87,7 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
     val sessions by vm.repo.sessions.collectAsStateWithLifecycle()
     val hrState by vm.hr.state.collectAsStateWithLifecycle()
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
-    val maxHr = profile.estimatedMaxHr
+    val maxHr = profile.hrZones
 
     fun hasLocation() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
@@ -139,7 +140,10 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
             run.running -> RunningView(run, maxHr)
             run.finished -> {
                 sessions.firstOrNull { it.sport == Sport.RUNNING }?.takeIf { System.currentTimeMillis() - it.startedAt < 6 * 3600_000 }
-                    ?.let { RunSummary(it) }
+                    ?.let {
+                        RunSummary(it)
+                        SessionReportCard(it, vm)
+                    }
                 Button(onClick = { RunTracker.reset() }, modifier = Modifier.fillMaxWidth()) { Text("Nouvelle course") }
             }
             else -> {
@@ -207,7 +211,7 @@ private fun StatusRow(run: RunState, hrConnected: Boolean, onGoToSensors: () -> 
 }
 
 @Composable
-private fun SelectedWorkout(w: Workout, maxHr: Int, onClear: () -> Unit) {
+private fun SelectedWorkout(w: Workout, maxHr: HrZones, onClear: () -> Unit) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -227,7 +231,7 @@ private fun SelectedWorkout(w: Workout, maxHr: Int, onClear: () -> Unit) {
 }
 
 @Composable
-private fun RunningView(run: RunState, maxHr: Int) {
+private fun RunningView(run: RunState, maxHr: HrZones) {
     var confirmStop by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Chrono géant
@@ -247,7 +251,7 @@ private fun RunningView(run: RunState, maxHr: Int) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricTile("Allure moy.", formatPace(run.avgPace), "/km", Icons.Filled.Timer, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
             MetricTile(
-                "Cardio" + (run.hr?.let { " · Z${RunEngine.zoneOf(it, maxHr)}" } ?: ""),
+                "Cardio" + (run.hr?.let { " · Z${maxHr.zoneOf(it)}" } ?: ""),
                 run.hr?.toString() ?: "--", "bpm", Icons.Filled.Favorite, HrColor, Modifier.weight(1f),
             )
         }

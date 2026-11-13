@@ -120,6 +120,17 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
                         "${profile.sessionsPerWeek} séances/sem. de ${profile.sessionMinutes} min, sur ${profile.horizonWeeks} semaines",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    val zones = profile.hrZones
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Zones cardio " + if (zones.custom) "(${profile.hrZonesSource ?: "personnalisées"})" else "(${zones.max} bpm max, calculées)",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            Text(zones.describe(), style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (zones.custom) TextButton(onClick = { vm.resetHrZones() }) { Text("Réinitialiser") }
+                    }
                 }
             }
         }
@@ -451,6 +462,17 @@ private fun StravaCard(vm: AppViewModel) {
                     )
                     if (byS.isNotEmpty()) {
                         Text(byS.entries.sortedByDescending { it.value }.joinToString(" · ") { "${it.key} ${it.value}" }, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                cache.hrZoneLows?.let { lows ->
+                    if (lows != profile.hrZoneLows) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Zones cardio Strava")
+                                Text(com.mathieu.madtrainer.data.HrZones.of(profile.estimatedMaxHr, lows).describe(), style = MaterialTheme.typography.bodySmall)
+                            }
+                            TextButton(onClick = { vm.useStravaHrZones() }) { Text("Utiliser") }
+                        }
                     }
                 }
                 cache.weightKg?.let { w ->

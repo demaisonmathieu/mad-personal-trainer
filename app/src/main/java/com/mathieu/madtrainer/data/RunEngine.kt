@@ -6,20 +6,9 @@ import kotlin.math.roundToInt
 object RunEngine {
 
     /** Bornes [min, max] en bpm de la zone 1..5 (50-60 %, …, 90-100 % de la FC max). */
-    fun zoneRange(zone: Int, maxHr: Int): IntRange {
-        val z = zone.coerceIn(1, 5)
-        val lo = (maxHr * (0.4 + 0.1 * z)).roundToInt()
-        val hi = (maxHr * (0.5 + 0.1 * z)).roundToInt()
-        return lo..hi
-    }
+    fun zoneRange(zone: Int, maxHr: Int): IntRange = HrZones.fromMax(maxHr).range(zone)
 
-    fun zoneOf(hr: Int, maxHr: Int): Int = when {
-        hr < maxHr * 0.6 -> 1
-        hr < maxHr * 0.7 -> 2
-        hr < maxHr * 0.8 -> 3
-        hr < maxHr * 0.9 -> 4
-        else -> 5
-    }
+    fun zoneOf(hr: Int, maxHr: Int): Int = HrZones.fromMax(maxHr).zoneOf(hr)
 
     /** Allure moyenne (s/km) sur une distance (m) et un temps (s) ; null si trop peu de distance. */
     fun pace(distanceM: Double, seconds: Double): Int? =
@@ -38,10 +27,12 @@ object RunEngine {
             ?: formatDuration(step.durationSec - stepElapsedSec)
 
     /** Consigne lisible, utilisée à l'écran et par la voix. */
-    fun targetText(step: WorkoutStep, maxHr: Int, spoken: Boolean = false): String = when (step.mode) {
+    fun targetText(step: WorkoutStep, maxHr: Int, spoken: Boolean = false): String = targetText(step, HrZones.fromMax(maxHr), spoken)
+
+    fun targetText(step: WorkoutStep, zones: HrZones, spoken: Boolean = false): String = when (step.mode) {
         StepMode.PACE -> if (spoken) "allure ${spokenPace(step.target.roundToInt())} au kilomètre" else "allure ${formatPace(step.target.roundToInt())}"
         StepMode.HR_ZONE -> {
-            val r = zoneRange(step.target.roundToInt(), maxHr)
+            val r = zones.range(step.target.roundToInt())
             if (spoken) "zone ${step.target.roundToInt()}, entre ${r.first} et ${r.last} pulsations"
             else "zone ${step.target.roundToInt()} (${r.first}–${r.last} bpm)"
         }
@@ -58,7 +49,9 @@ object RunEngine {
     /**
      * Faut-il accélérer / ralentir ? Tolérance ±15 s/km pour l'allure, ±3 bpm autour de la zone.
      */
-    fun guidance(step: WorkoutStep, currentPace: Int?, hr: Int?, maxHr: Int): Guidance = when (step.mode) {
+    fun guidance(step: WorkoutStep, currentPace: Int?, hr: Int?, maxHr: Int): Guidance = guidance(step, currentPace, hr, HrZones.fromMax(maxHr))
+
+    fun guidance(step: WorkoutStep, currentPace: Int?, hr: Int?, zones: HrZones): Guidance = when (step.mode) {
         StepMode.PACE -> when {
             currentPace == null -> Guidance.NONE
             currentPace > step.target + 15 -> Guidance.FASTER
@@ -69,7 +62,7 @@ object RunEngine {
             if (hr == null) {
                 Guidance.NONE
             } else {
-                val r = zoneRange(step.target.roundToInt(), maxHr)
+                val r = zones.range(step.target.roundToInt())
                 when {
                     hr > r.last + 3 -> Guidance.SLOWER
                     hr < r.first - 3 -> Guidance.FASTER

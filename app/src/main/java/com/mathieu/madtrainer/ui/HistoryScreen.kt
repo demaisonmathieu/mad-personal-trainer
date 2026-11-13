@@ -66,7 +66,7 @@ fun HistoryScreen(vm: AppViewModel) {
     val selected = sessions.firstOrNull { it.id == selectedId }
 
     if (selected != null) {
-        SessionDetail(selected, onBack = { selectedId = null }, onDelete = {
+        SessionDetail(selected, vm, onBack = { selectedId = null }, onDelete = {
             vm.deleteSession(selected.id)
             selectedId = null
         })
@@ -135,7 +135,7 @@ fun HistoryScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun SessionDetail(s: SessionRecord, onBack: () -> Unit, onDelete: () -> Unit) {
+private fun SessionDetail(s: SessionRecord, vm: AppViewModel, onBack: () -> Unit, onDelete: () -> Unit) {
     BackHandler { onBack() }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -178,6 +178,7 @@ private fun SessionDetail(s: SessionRecord, onBack: () -> Unit, onDelete: () -> 
                 }
             }
         }
+        SessionReportCard(s, vm)
         val samples = downsample(s.samples.map { it }, 400)
         if (s.sport == Sport.RUNNING) {
             ChartCard("Vitesse (km/h)", samples.map { it.paceSecPerKm?.let { p -> 3600f / p } }, CadenceColor)

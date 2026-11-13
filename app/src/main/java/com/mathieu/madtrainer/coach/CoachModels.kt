@@ -1,5 +1,6 @@
 package com.mathieu.madtrainer.coach
 
+import com.mathieu.madtrainer.data.HrZones
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -42,11 +43,18 @@ data class UserProfile(
     val constraints: String = "",
     /** Repères running : chronos récents, km par semaine… (texte libre) */
     val runningInfo: String = "",
+    /** Zones cardio personnalisées (bornes basses des zones 1 à 5, bpm), ex. importées de Strava */
+    val hrZoneLows: List<Int>? = null,
+    /** Origine des zones personnalisées (« Strava »…) */
+    val hrZonesSource: String? = null,
 ) {
     val bmi: Double get() = weightKg / ((heightCm / 100.0) * (heightCm / 100.0))
 
     /** FC max mesurée sinon estimée (formule de Tanaka : 208 − 0,7 × âge). */
     val estimatedMaxHr: Int get() = maxHr ?: (208 - 0.7 * age).toInt()
+
+    /** Zones cardio utilisées partout dans l'app (personnalisées si importées, sinon % de la FC max). */
+    val hrZones: HrZones get() = HrZones.of(estimatedMaxHr, hrZoneLows)
 }
 
 /** Séance proposée par le coach (format JSON demandé à l'IA). */

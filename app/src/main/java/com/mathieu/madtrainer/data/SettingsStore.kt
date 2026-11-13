@@ -26,6 +26,10 @@ data class Settings(
     val includeStrava: Boolean = true,
     /** Mode global de l'app. */
     val sport: Sport = Sport.ELLIPTICAL,
+    /** Coach vocal : annonces d'étapes, préavis 30 s, alertes cardio. */
+    val voice: Boolean = true,
+    /** Alerte quand le cardio est trop haut pour l'étape. */
+    val hrAlerts: Boolean = true,
 ) {
     val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
 }
@@ -50,6 +54,8 @@ class SettingsStore(context: Context) {
         stravaRefresh = prefs.getString("stravaRefresh", "") ?: "",
         stravaExpiresAt = prefs.getLong("stravaExpiresAt", 0),
         includeStrava = prefs.getBoolean("includeStrava", true),
+        voice = prefs.getBoolean("voice", true),
+        hrAlerts = prefs.getBoolean("hrAlerts", true),
         sport = runCatching { Sport.valueOf(prefs.getString("sport", "ELLIPTICAL")!!) }.getOrDefault(Sport.ELLIPTICAL),
     )
 
@@ -71,6 +77,8 @@ class SettingsStore(context: Context) {
             .putLong("stravaExpiresAt", s.stravaExpiresAt)
             .putBoolean("includeStrava", s.includeStrava)
             .putString("sport", s.sport.name)
+            .putBoolean("voice", s.voice)
+            .putBoolean("hrAlerts", s.hrAlerts)
             .apply()
         _settings.value = s
     }

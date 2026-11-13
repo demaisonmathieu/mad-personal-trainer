@@ -95,6 +95,8 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     private var legacyRequestedResistance: Int? = null
     private var legacyLastStatusAt = 0L
     private var legacyDistanceM = 0.0
+    private var legacySessionStart: Long? = null
+    @Volatile private var legacyConfirmedResistance: Int? = null
     private val isLegacy get() = _caps.value.legacyDomyos && legacyWriteCh != null
     private var controlPoint: BluetoothGattCharacteristic? = null
     private var wantConnected = false
@@ -255,6 +257,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         legacyAck?.complete(Unit)
         legacyErgTarget = null
         legacyRequestedResistance = null
+        legacySessionStart = null
         pendingOp?.complete(null)
         pendingOp = null
     }
@@ -497,7 +500,24 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         legacyJob = scope.launch {
             var tick = 0
             while (true) {
-                legacySend(listOf(DomyosLegacy.Frame(DomyosLegacy.NOOP, true)), quiet = true)
+                val start = legacySessionStart
+                if (start != null && tick % 4 == 3) {
+                    // Pendant une séance : rafraîchit l'écran de la console (~1,2 s), comme l'app Domyos
+                    val m = _metrics.value
+                    legacySend(
+                        DomyosLegacy.displayFrames(
+                            elapsedSec = ((System.currentTimeMillis() - start) / 1000).toInt(),
+                            speedKmh = m.speedKmh ?: 0.0,
+                            cadence = m.cadence?.toInt() ?: 0,
+                            heartRate = m.heartRate ?: 0,
+                            kcal = m.totalKcal ?: 0,
+                            odometerKm = legacyDistanceM / 1000.0,
+                        ),
+                        quiet = true,
+                    )
+                } else {
+                    legacySend(listOf(DomyosLegacy.Frame(DomyosLegacy.NOOP, true)), quiet = true)
+                }
                 tick++
                 // ERG simulé : toutes les ~1,2 s, ajuste la résistance pour viser la puissance cible
                 val target = legacyErgTarget
@@ -515,12 +535,26 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         val l = level.coerceIn(DomyosLegacy.MIN_RESISTANCE, DomyosLegacy.MAX_RESISTANCE)
         legacyRequestedResistance = l
         if (!fromErg) log("Résistance cible : $l")
-        legacySend(DomyosLegacy.resistanceFrames(l))
+        // Envoi + vérification de l'écho "F0 BD" ; une nouvelle tentative si la console ne confirme pas
+        repeat(2) { attempt ->
+            legacyConfirmedResistance = null
+            legacySend(DomyosLegacy.resistanceFrames(l))
+            val ok = withTimeoutOrNull(800) {
+                while (legacyConfirmedResistance != l) delay(50)
+                true
+            } ?: false
+            if (ok) return
+            if (legacyRequestedResistance != l) return // une autre consigne est arrivée entre-temps
+            log(if (attempt == 0) "Résistance $l non confirmée, nouvel essai…" else "Résistance $l refusée par la console")
+        }
     }
 
     private fun onLegacyNotify(value: ByteArray) {
         if (value.size != 20) legacyAck?.complete(Unit)
-        DomyosLegacy.parseCommandAck(value)?.let { log("Console : résistance $it acceptée") }
+        DomyosLegacy.parseCommandAck(value)?.let {
+            legacyConfirmedResistance = it
+            log("Console : résistance $it acceptée")
+        }
         val packet = legacyAssembler.push(value) ?: return
         val st = DomyosLegacy.parseStatus(packet) ?: return
         val now = System.currentTimeMillis()
@@ -600,6 +634,8 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     fun startMachine() = scope.launch {
         if (isLegacy) {
             legacySend(DomyosLegacy.initSequence(start = true))
+            legacySessionStart = System.currentTimeMillis()
+            log("Séance démarrée sur la console")
             return@launch
         }
         ensureControl()
@@ -618,6 +654,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     fun stopMachine() = scope.launch {
         if (isLegacy) {
             legacyErgTarget = null
+            legacySessionStart = null
             legacySend(listOf(DomyosLegacy.Frame(DomyosLegacy.STOP, true)))
             return@launch
         }

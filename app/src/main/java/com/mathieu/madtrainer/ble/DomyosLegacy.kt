@@ -60,7 +60,47 @@ object DomyosLegacy {
         var sum = 0
         for (i in 0 until 22) sum += w[i].toInt() and 0xFF
         w[22] = (sum and 0xFF).toByte()
-        return listOf(Frame(w.copyOfRange(0, 20), true), Frame(w.copyOfRange(20, 23), true))
+        // Les deux morceaux doivent partir sans pause entre eux (comme à l'init), sinon la console
+        // abandonne la trame incomplète : on n'attend la réponse qu'après le dernier morceau.
+        return listOf(Frame(w.copyOfRange(0, 20), false), Frame(w.copyOfRange(20, 23), true))
+    }
+
+    private fun withChecksum(w: ByteArray): ByteArray {
+        var sum = 0
+        for (i in 0 until w.size - 1) sum += w[i].toInt() and 0xFF
+        w[w.size - 1] = (sum and 0xFF).toByte()
+        return w
+    }
+
+    private fun split(w: ByteArray) = listOf(Frame(w.copyOfRange(0, 20), false), Frame(w.copyOfRange(20, w.size), true))
+
+    /**
+     * Mise à jour de l'écran de la console pendant une séance (trames "F0 CD" puis "F0 CB 03").
+     * Fait passer la console de l'écran "Bluetooth" à l'affichage de séance.
+     */
+    fun displayFrames(elapsedSec: Int, speedKmh: Double, cadence: Int, heartRate: Int, kcal: Int, odometerKm: Double): List<Frame> {
+        val d2 = b(
+            0xf0, 0xcd, 0x01, 0x00, 0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+        )
+        val odo = (odometerKm * 10).toInt().coerceIn(0, 0xFFFF)
+        d2[3] = (odo shr 8).toByte()
+        d2[4] = (odo and 0xFF).toByte()
+        val d = b(
+            0xf0, 0xcb, 0x03, 0x00, 0x00, 0xff, 0x01, 0x00, 0x00, 0x02, 0x01, 0x00, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0x00,
+        )
+        d[3] = ((elapsedSec / 60) and 0xFF).toByte()
+        d[4] = ((elapsedSec % 60) and 0xFF).toByte()
+        val sp = speedKmh.toInt().coerceIn(0, 0xFFFF)
+        d[7] = (sp shr 8).toByte()
+        d[8] = (sp and 0xFF).toByte()
+        d[12] = heartRate.coerceIn(0, 255).toByte()
+        d[16] = cadence.coerceIn(0, 255).toByte()
+        val k = kcal.coerceIn(0, 0xFFFF)
+        d[19] = (k shr 8).toByte()
+        d[20] = (k and 0xFF).toByte()
+        return split(withChecksum(d2)) + split(withChecksum(d))
     }
 
     /** Écho "F0 BD" d'une commande "F0 AD" acceptée : renvoie le niveau de résistance confirmé, sinon null. */

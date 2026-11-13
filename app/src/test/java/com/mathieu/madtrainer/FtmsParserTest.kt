@@ -133,6 +133,32 @@ class DomyosLegacyTest {
     }
 
     @Test
+    fun resistanceChunksAreSentBackToBack() {
+        val f = com.mathieu.madtrainer.ble.DomyosLegacy.resistanceFrames(3)
+        assertTrue(!f[0].waitResponse)   // pas de pause entre les 2 morceaux
+        assertTrue(f[1].waitResponse)
+        // Doit être identique à la trame d'init acceptée, au niveau près
+        val hex = (f[0].bytes + f[1].bytes).joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }
+        assertEquals("F0 AD FF FF FF FF FF FF FF FF 03 FF FF FF FF FF FF FF 01 FF FF FF 8F", hex)
+    }
+
+    @Test
+    fun displayFramesChecksum() {
+        val fr = com.mathieu.madtrainer.ble.DomyosLegacy.displayFrames(125, 6.2, 72, 0, 3, 0.5)
+        assertEquals(4, fr.size)
+        for (k in listOf(0, 2)) {
+            val w = fr[k].bytes + fr[k + 1].bytes
+            assertEquals(27, w.size)
+            var sum = 0
+            for (i in 0 until 26) sum += w[i].toInt() and 0xFF
+            assertEquals(sum and 0xFF, w[26].toInt() and 0xFF)
+        }
+        val d = fr[2].bytes + fr[3].bytes
+        assertEquals(2, d[3].toInt()); assertEquals(5, d[4].toInt()) // 2 min 05 s
+        assertEquals(72, d[16].toInt())
+    }
+
+    @Test
     fun commandAckFromRealLog() {
         val d = com.mathieu.madtrainer.ble.DomyosLegacy
         // Écho réel reçu de la console EL500 (journal du 13/11)

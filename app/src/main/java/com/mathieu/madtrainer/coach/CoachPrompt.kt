@@ -1,0 +1,128 @@
+package com.mathieu.madtrainer.coach
+
+import com.mathieu.madtrainer.data.SessionRecord
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.roundToInt
+
+/** Ce que la machine sait faire, pour que l'IA propose des séances exécutables. */
+data class Equipment(
+    val machine: String = "Vélo elliptique Domyos EL500",
+    val resistanceMin: Int = 1,
+    val resistanceMax: Int = 15,
+    val powerControl: String = "mode ERG simulé (l'app ajuste la résistance pour viser des watts ; puissance estimée)",
+    val hasHeartRate: Boolean = false,
+)
+
+object CoachPrompt {
+
+    fun build(profile: UserProfile, sessions: List<SessionRecord>, equipment: Equipment, now: Date = Date()): String {
+        val p = profile
+        val date = SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE).format(now)
+        val maxHr = p.estimatedMaxHr
+        fun zone(lo: Double, hi: Double) = "${(maxHr * lo).roundToInt()}–${(maxHr * hi).roundToInt()} bpm"
+
+        return buildString {
+            appendLine("Tu es un coach sportif diplômé, spécialisé en entraînement cardio sur vélo elliptique, prudent et bienveillant.")
+            appendLine("Nous sommes le $date. Construis un programme d'entraînement personnalisé pour la personne ci-dessous, en français.")
+            appendLine()
+            appendLine("## Profil")
+            if (p.firstName.isNotBlank()) appendLine("- Prénom : ${p.firstName}")
+            appendLine("- Sexe : ${p.sex.label}, âge : ${p.age} ans")
+            appendLine("- Poids : ${fmt(p.weightKg)} kg, taille : ${p.heightCm} cm, IMC : ${fmt(p.bmi)}")
+            p.targetWeightKg?.let { appendLine("- Poids visé : ${fmt(it)} kg") }
+            appendLine("- FC max : $maxHr bpm" + if (p.maxHr == null) " (estimée, formule de Tanaka)" else " (mesurée)")
+            p.restingHr?.let { appendLine("- FC de repos : $it bpm") }
+            appendLine("- Objectif principal : ${p.goal.label}")
+            appendLine("- Niveau : ${p.level.label}")
+            appendLine("- Disponibilité : ${p.sessionsPerWeek} séances par semaine, environ ${p.sessionMinutes} min chacune")
+            appendLine("- Durée du programme : ${p.horizonWeeks} semaines")
+            if (p.preferences.isNotBlank()) appendLine("- Préférences : ${p.preferences.trim()}")
+            if (p.constraints.isNotBlank()) appendLine("- Contraintes / douleurs / limites : ${p.constraints.trim()}")
+            appendLine()
+
+            appendLine("## Matériel")
+            appendLine("- ${equipment.machine}, piloté par une app qui exécute les séances automatiquement.")
+            appendLine("- Résistance réglable de ${equipment.resistanceMin} à ${equipment.resistanceMax}.")
+            appendLine("- Contrôle par puissance : ${equipment.powerControl}.")
+            appendLine("- Cardio : " + if (equipment.hasHeartRate) "disponible en direct (montre connectée)." else "pas forcément disponible pendant la séance.")
+            appendLine("- Zones cardio indicatives : Z1 ${zone(0.50, 0.60)}, Z2 ${zone(0.60, 0.70)}, Z3 ${zone(0.70, 0.80)}, Z4 ${zone(0.80, 0.90)}, Z5 ${zone(0.90, 1.0)}.")
+            appendLine()
+
+            appendLine("## Historique récent")
+            val recent = sessions.sortedByDescending { it.startedAt }.take(15)
+            if (recent.isEmpty()) {
+                appendLine("Aucune séance enregistrée pour l'instant.")
+            } else {
+                val df = SimpleDateFormat("dd/MM", Locale.FRANCE)
+                val totalMin = recent.sumOf { it.durationSec } / 60
+                appendLine("${recent.size} dernières séances ($totalMin min au total) :")
+                recent.forEach { s ->
+                    val parts = mutableListOf(
+                        df.format(Date(s.startedAt)),
+                        s.workoutName ?: "séance libre",
+                        "${s.durationSec / 60} min",
+                        "${s.avgPower} W moy / ${s.maxPower} W max",
+                    )
+                    if (s.avgCadence > 0) parts += "cadence ${s.avgCadence.roundToInt()}"
+                    s.avgHr?.let { parts += "FC moy $it" }
+                    if (s.kcal > 0) parts += "${s.kcal} kcal"
+                    val avgRes = s.samples.mapNotNull { it.resistance }.takeIf { it.isNotEmpty() }?.average()
+                    avgRes?.let { parts += "résistance moy ${fmt(it)}" }
+                    appendLine("- " + parts.joinToString(", "))
+                }
+            }
+            appendLine()
+
+            appendLine("## Ce que j'attends")
+            appendLine("1. Une courte analyse de ma situation et de ce qui est réaliste en ${p.horizonWeeks} semaines.")
+            appendLine("2. La structure hebdomadaire (quels jours, quel type de séance, progression semaine par semaine).")
+            appendLine("3. Toutes les séances du programme, précises et exécutables sur ma machine.")
+            appendLine("4. Des conseils concrets : technique sur elliptique, nutrition et hydratation (généraux, sans régime extrême), récupération et sommeil, motivation.")
+            appendLine("5. Les signaux d'alerte qui doivent me faire arrêter, et quand consulter un médecin.")
+            appendLine()
+            appendLine("Règles pour les séances :")
+            appendLine("- Chaque séance commence par un échauffement progressif (au moins 5 min) et finit par un retour au calme (au moins 3 min).")
+            appendLine("- Les étapes sont de type RESISTANCE (cible = niveau ${equipment.resistanceMin}-${equipment.resistanceMax}), POWER (cible = watts) ou FREE (sans consigne).")
+            appendLine("- Pour un niveau ${p.level.label.lowercase()}, reste prudent sur l'intensité et le volume (progression d'environ 10 % par semaine au maximum).")
+            appendLine("- Donne à chaque étape un nom court et motivant, en français.")
+            appendLine("- Respecte ma durée de séance (± 10 %).")
+            appendLine()
+            appendLine("## Format de réponse OBLIGATOIRE")
+            appendLine("Rédige d'abord tes explications et conseils en texte lisible.")
+            appendLine("Puis termine par UN SEUL bloc ```json (sans commentaire à l'intérieur) qui respecte exactement ce schéma :")
+            appendLine(SCHEMA)
+            appendLine("Le bloc JSON doit contenir toutes les séances de toutes les semaines (week = numéro de semaine, day = jour suggéré).")
+            appendLine("duration_sec est en secondes. mode vaut RESISTANCE, POWER ou FREE. target est un nombre.")
+        }
+    }
+
+    private fun fmt(v: Double) = if (v % 1.0 == 0.0) v.toInt().toString() else "%.1f".format(Locale.FRANCE, v)
+
+    val SCHEMA = """
+```json
+{
+  "plan_name": "string",
+  "summary": "string — analyse et objectif en 3-5 phrases",
+  "weekly_structure": "string — organisation type de la semaine",
+  "advice": ["conseil d'entraînement", "..."],
+  "nutrition": ["conseil nutrition / hydratation", "..."],
+  "recovery": ["conseil récupération / sommeil", "..."],
+  "progression": "string — comment faire évoluer le plan ensuite",
+  "warnings": ["signal d'alerte", "..."],
+  "workouts": [
+    {
+      "name": "S1 – Lundi – Endurance douce",
+      "week": 1,
+      "day": "Lundi",
+      "purpose": "string — but de la séance",
+      "steps": [
+        { "name": "Échauffement", "duration_sec": 300, "mode": "RESISTANCE", "target": 3 },
+        { "name": "Bloc tempo", "duration_sec": 600, "mode": "POWER", "target": 110 }
+      ]
+    }
+  ]
+}
+```""".trimIndent()
+}

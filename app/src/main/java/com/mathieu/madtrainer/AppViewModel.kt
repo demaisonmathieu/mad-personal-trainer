@@ -9,6 +9,13 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.mathieu.madtrainer.ble.BikeManager
 import com.mathieu.madtrainer.ble.HeartRateManager
+import com.mathieu.madtrainer.ble.ConnState
+import com.mathieu.madtrainer.coach.AnthropicClient
+import com.mathieu.madtrainer.coach.CoachParser
+import com.mathieu.madtrainer.coach.CoachPrompt
+import com.mathieu.madtrainer.coach.Equipment
+import com.mathieu.madtrainer.coach.SavedPlan
+import com.mathieu.madtrainer.coach.UserProfile
 import com.mathieu.madtrainer.data.Repository
 import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.SessionRecord
@@ -26,6 +33,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+sealed interface CoachState {
+    data object Idle : CoachState
+    data object Generating : CoachState
+    data class Done(val workouts: Int) : CoachState
+    data class Error(val message: String) : CoachState
+}
 
 data class LiveSession(
     val running: Boolean = false,
@@ -52,6 +66,61 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private var ticker: Job? = null
     private var appliedStep = -1
+
+    // ------------------------------------------------------------ coach IA
+
+    private val _coach = MutableStateFlow<CoachState>(CoachState.Idle)
+    val coach: StateFlow<CoachState> = _coach
+
+    fun saveProfile(p: UserProfile) = viewModelScope.launch { repo.saveProfile(p) }
+
+    private fun equipment(): Equipment {
+        val caps = bike.caps.value
+        val range = caps.resistanceRange
+        val legacy = caps.legacyDomyos || !caps.hasFtms
+        return Equipment(
+            resistanceMin = if (range != null && legacy) range.min else 1,
+            resistanceMax = if (range != null && legacy) range.max else 15,
+            hasHeartRate = hr.state.value == ConnState.CONNECTED || settingsStore.settings.value.hrAddress != null,
+        )
+    }
+
+    fun buildCoachPrompt(): String = CoachPrompt.build(repo.profile.value, repo.sessions.value, equipment())
+
+    /** Importe la réponse de l'IA (collée ou reçue de l'API) : plan + séances dans Programmes. */
+    fun importCoachResponse(response: String) {
+        val eq = equipment()
+        CoachParser.parse(response).fold(
+            onSuccess = { plan ->
+                val workouts = CoachParser.toWorkouts(plan, eq.resistanceMin, eq.resistanceMax)
+                viewModelScope.launch {
+                    repo.savePlan(SavedPlan(System.currentTimeMillis(), plan, response), workouts)
+                    _coach.value = CoachState.Done(workouts.size)
+                }
+            },
+            onFailure = { _coach.value = CoachState.Error(it.message ?: "Réponse illisible") },
+        )
+    }
+
+    fun generateWithApi() {
+        val s = settingsStore.settings.value
+        if (s.anthropicKey.isBlank()) {
+            _coach.value = CoachState.Error("Renseigne d'abord ta clé API dans les réglages du coach")
+            return
+        }
+        if (_coach.value == CoachState.Generating) return
+        _coach.value = CoachState.Generating
+        val prompt = buildCoachPrompt()
+        viewModelScope.launch {
+            runCatching { AnthropicClient.complete(s.anthropicKey, s.anthropicModel, prompt) }
+                .onSuccess { importCoachResponse(it) }
+                .onFailure { _coach.value = CoachState.Error(it.message ?: "Échec de l'appel à l'API") }
+        }
+    }
+
+    fun resetCoachState() {
+        _coach.value = CoachState.Idle
+    }
 
     private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val update: StateFlow<UpdateState> = _update

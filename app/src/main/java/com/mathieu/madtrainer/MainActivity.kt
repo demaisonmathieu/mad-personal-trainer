@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.History
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mathieu.madtrainer.ble.ConnState
+import com.mathieu.madtrainer.ui.CoachScreen
 import com.mathieu.madtrainer.ui.DeviceScreen
 import com.mathieu.madtrainer.ui.MadTheme
 import com.mathieu.madtrainer.ui.HistoryScreen
@@ -50,6 +52,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val label: String, val icon: ImageVector) {
     DEVICE("Vélo", Icons.Filled.Bluetooth),
     SESSION("Séance", Icons.Filled.FitnessCenter),
+    COACH("Coach", Icons.Filled.AutoAwesome),
     WORKOUTS("Programmes", Icons.Filled.EditNote),
     HISTORY("Historique", Icons.Filled.History),
 }
@@ -85,6 +88,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
             when (tab) {
                 Tab.DEVICE -> DeviceScreen(vm)
                 Tab.SESSION -> SessionScreen(vm, onGoToDevice = { tab = Tab.DEVICE })
+                Tab.COACH -> CoachScreen(vm, onStartWorkout = { tab = Tab.SESSION })
                 Tab.WORKOUTS -> WorkoutsScreen(vm, onStart = { tab = Tab.SESSION })
                 Tab.HISTORY -> HistoryScreen(vm)
             }

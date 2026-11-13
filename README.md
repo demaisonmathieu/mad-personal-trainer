@@ -31,6 +31,20 @@ Au démarrage, l'app interroge la dernière Release GitHub (le dépôt doit êtr
 
 La première fois, Android demande d'autoriser MAD Personal Trainer à installer des applis : active l'option, reviens dans l'app et appuie de nouveau sur **Installer**. Le bouton **Vérifier** (onglet Vélo, carte Application) relance la recherche à la main.
 
+## Coach personnel (IA)
+
+Onglet **Coach** :
+
+1. **Profil** : âge, poids, taille, poids visé, FC repos et FC max, objectif (perte de poids, remise en forme, endurance, santé cardio, performance), niveau, séances par semaine, durée des séances, durée du programme, préférences et contraintes.
+2. **Générer mon programme** : l'app construit un prompt avec ton profil, tes 15 dernières séances, les capacités de la machine (résistance de 1 à 15, ERG simulé) et tes zones cardio.
+   - **Avec Claude (API)** : renseigne ta clé dans *Réglages IA*, puis appuie sur *Générer avec Claude*. Tout est automatique.
+   - **Copier-coller** : *Copier le prompt*, colle-le dans Claude (ou une autre IA), copie toute la réponse, puis *Coller* et *Importer le plan*.
+3. La réponse se termine par un bloc JSON. L'app en tire :
+   - les **séances**, ajoutées dans Programmes et regroupées par semaine et par jour ;
+   - les **conseils** : entraînement, nutrition, récupération, progression et signaux d'alerte, affichés dans l'onglet Coach.
+
+Un nouveau plan remplace les séances du plan précédent. Tes séances perso ne sont pas touchées.
+
 ## Cardio : montre ou ceinture
 
 L'onglet **Vélo** comporte une carte **Cardio (montre ou ceinture)**. Elle accepte tout appareil cardio Bluetooth standard : ceinture, ou montre en mode diffusion.

@@ -14,6 +14,9 @@ data class Settings(
     /** Cardiofréquencemètre / montre mémorisé. */
     val hrAddress: String? = null,
     val hrName: String? = null,
+    /** Coach IA : clé API Anthropic (optionnelle) et modèle. */
+    val anthropicKey: String = "",
+    val anthropicModel: String = "claude-sonnet-5-5",
 )
 
 class SettingsStore(context: Context) {
@@ -28,6 +31,8 @@ class SettingsStore(context: Context) {
         lastName = prefs.getString("lastName", null),
         hrAddress = prefs.getString("hrAddress", null),
         hrName = prefs.getString("hrName", null),
+        anthropicKey = prefs.getString("anthropicKey", "") ?: "",
+        anthropicModel = prefs.getString("anthropicModel", "claude-sonnet-5-5") ?: "claude-sonnet-5-5",
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -39,6 +44,8 @@ class SettingsStore(context: Context) {
             .putString("lastName", s.lastName)
             .putString("hrAddress", s.hrAddress)
             .putString("hrName", s.hrName)
+            .putString("anthropicKey", s.anthropicKey)
+            .putString("anthropicModel", s.anthropicModel)
             .apply()
         _settings.value = s
     }

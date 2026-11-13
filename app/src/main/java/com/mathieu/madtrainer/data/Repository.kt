@@ -1,6 +1,8 @@
 package com.mathieu.madtrainer.data
 
 import android.content.Context
+import com.mathieu.madtrainer.coach.SavedPlan
+import com.mathieu.madtrainer.coach.UserProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +16,13 @@ class Repository(context: Context) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val workoutsFile = File(context.filesDir, "workouts.json")
     private val sessionsDir = File(context.filesDir, "sessions").apply { mkdirs() }
+    private val profileFile = File(context.filesDir, "profile.json")
+    private val planFile = File(context.filesDir, "coach_plan.json")
+
+    private val _profile = MutableStateFlow(UserProfile())
+    val profile: StateFlow<UserProfile> = _profile
+    private val _plan = MutableStateFlow<SavedPlan?>(null)
+    val plan: StateFlow<SavedPlan?> = _plan
 
     private val _workouts = MutableStateFlow<List<Workout>>(emptyList())
     val workouts: StateFlow<List<Workout>> = _workouts
@@ -26,6 +35,9 @@ class Repository(context: Context) {
         }.getOrElse {
             WorkoutEngine.defaultWorkouts().also { writeWorkouts(it) }
         }
+        _profile.value = runCatching { json.decodeFromString(UserProfile.serializer(), profileFile.readText()) }
+            .getOrDefault(UserProfile())
+        _plan.value = runCatching { json.decodeFromString(SavedPlan.serializer(), planFile.readText()) }.getOrNull()
         _sessions.value = sessionsDir.listFiles().orEmpty()
             .filter { it.extension == "json" }
             .mapNotNull { f -> runCatching { json.decodeFromString(SessionRecord.serializer(), f.readText()) }.getOrNull() }
@@ -34,6 +46,22 @@ class Repository(context: Context) {
 
     private fun writeWorkouts(list: List<Workout>) {
         workoutsFile.writeText(json.encodeToString(ListSerializer(Workout.serializer()), list))
+    }
+
+    suspend fun saveProfile(p: UserProfile) = withContext(Dispatchers.IO) {
+        profileFile.writeText(json.encodeToString(UserProfile.serializer(), p))
+        _profile.value = p
+    }
+
+    /** Enregistre le plan du coach et remplace les séances du plan précédent. */
+    suspend fun savePlan(plan: SavedPlan, workouts: List<Workout>) = withContext(Dispatchers.IO) {
+        val oldIds = _plan.value?.workoutIds.orEmpty().toSet()
+        val list = _workouts.value.filterNot { it.id in oldIds } + workouts
+        writeWorkouts(list)
+        _workouts.value = list
+        val saved = plan.copy(workoutIds = workouts.map { it.id })
+        planFile.writeText(json.encodeToString(SavedPlan.serializer(), saved))
+        _plan.value = saved
     }
 
     suspend fun saveWorkout(w: Workout) = withContext(Dispatchers.IO) {

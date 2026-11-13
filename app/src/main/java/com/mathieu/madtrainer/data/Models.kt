@@ -20,6 +20,11 @@ data class Workout(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "Nouvelle séance",
     val steps: List<WorkoutStep> = emptyList(),
+    /** Renseignés pour les séances proposées par le coach. */
+    val planWeek: Int? = null,
+    val planDay: String? = null,
+    val notes: String = "",
+    val fromCoach: Boolean = false,
 ) {
     val totalSec: Int get() = steps.sumOf { it.durationSec }
 }

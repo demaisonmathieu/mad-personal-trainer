@@ -42,6 +42,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -213,6 +214,7 @@ fun StrengthSection(vm: AppViewModel) {
                                 }
                                 IconButton(onClick = { toStart = sess }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
                             }
+                            SessionExercises(sess, vm)
                         }
                     }
                 }
@@ -373,6 +375,8 @@ private fun StrengthPlayerView(p: StrengthPlayerState, vm: AppViewModel) {
         }
         if (!step.rest) {
             val e = step.exercise
+            ExerciseIllustration(vm.exerciseCatalog.find(e))
+            YoutubeDemoButton(e.name, Modifier.align(Alignment.CenterHorizontally))
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (e.instructions.isNotBlank()) Text(e.instructions)
@@ -383,7 +387,10 @@ private fun StrengthPlayerView(p: StrengthPlayerState, vm: AppViewModel) {
                 }
             }
         } else {
-            next?.let { Text("Ensuite : ${it.label}", style = MaterialTheme.typography.titleMedium) }
+            next?.let {
+                Text("Ensuite : ${it.label}", style = MaterialTheme.typography.titleMedium)
+                if (!it.rest) ExerciseIllustration(vm.exerciseCatalog.find(it.exercise), maxHeight = 160.dp)
+            }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             FilledIconButton(onClick = { vm.previousStrengthStep() }) { Icon(Icons.Filled.SkipPrevious, "Précédent") }
@@ -433,4 +440,31 @@ private fun FinishDialog(p: StrengthPlayerState, vm: AppViewModel) {
         },
         confirmButton = { TextButton(onClick = { vm.finishStrength(after.toInt(), note) }) { Text("Enregistrer") } },
     )
+}
+
+/** Liste dépliable des exercices d'une séance, avec illustration et lien vidéo. */
+@Composable
+private fun SessionExercises(sess: StrengthSession, vm: AppViewModel) {
+    var open by remember(sess.name) { mutableStateOf(false) }
+    val context = LocalContext.current
+    TextButton(onClick = { open = !open }) { Text(if (open) "Masquer les exercices" else "Voir les exercices") }
+    if (open) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            sess.exercises.forEach { e ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ExerciseIllustration(vm.exerciseCatalog.find(e), modifier = Modifier.weight(0.4f), maxHeight = 80.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(0.6f)) {
+                        Text(e.name, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${e.sets} × " + (e.reps?.let { "$it reps" } ?: "${e.duration_sec ?: 0} s") +
+                                (if (e.per_side) " / côté" else "") + " · repos ${e.rest_sec} s",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = { openYoutubeDemo(context, e.name) }) { Text("Vidéo YouTube") }
+                    }
+                }
+            }
+        }
+    }
 }

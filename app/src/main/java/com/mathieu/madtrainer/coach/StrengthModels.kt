@@ -55,6 +55,8 @@ data class StrengthExercise(
     val easier: String = "",
     val harder: String = "",
     val avoid_if: String = "",
+    /** Identifiant de l'illustration dans la banque d'exercices (photos début / fin de mouvement), null si aucune */
+    val image_id: String? = null,
 )
 
 @Serializable

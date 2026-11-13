@@ -21,6 +21,7 @@ import com.mathieu.madtrainer.coach.PlayerStep
 import com.mathieu.madtrainer.coach.SavedStrengthPlan
 import com.mathieu.madtrainer.coach.StrengthPlayer
 import com.mathieu.madtrainer.coach.StrengthProfile
+import com.mathieu.madtrainer.coach.ExerciseCatalog
 import com.mathieu.madtrainer.coach.StrengthPrompt
 import com.mathieu.madtrainer.coach.StrengthSession
 import com.mathieu.madtrainer.strava.StravaCache
@@ -263,11 +264,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _strengthCoach = MutableStateFlow<CoachState>(CoachState.Idle)
     val strengthCoach: StateFlow<CoachState> = _strengthCoach
 
+    /** Banque d'images d'exercices (assets/exercises.json, domaine public). */
+    val exerciseCatalog: ExerciseCatalog by lazy {
+        runCatching {
+            ExerciseCatalog.parse(getApplication<Application>().assets.open("exercises.json").bufferedReader().use { it.readText() })
+        }.getOrElse { ExerciseCatalog(emptyList()) }
+    }
+
     fun saveStrengthProfile(p: StrengthProfile) = viewModelScope.launch { repo.saveStrengthProfile(p) }
 
     fun buildStrengthPrompt(): String {
         val strava = if (settingsStore.settings.value.includeStrava) StravaSummary.describe(repo.strava.value) else null
-        return StrengthPrompt.build(repo.profile.value, repo.strengthProfile.value, repo.sessions.value, repo.painLogs.value, strava)
+        return StrengthPrompt.build(repo.profile.value, repo.strengthProfile.value, repo.sessions.value, repo.painLogs.value, strava,
+            imageIds = exerciseCatalog.idsForPrompt(repo.strengthProfile.value.equipment),
+        )
     }
 
     fun importStrengthResponse(response: String) {

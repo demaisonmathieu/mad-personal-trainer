@@ -89,7 +89,8 @@ Dans l'onglet Coach, le bouton **Renfo & douleurs** ouvre la section dédiée :
    - les habitudes quotidiennes ;
    - les séances détaillées : séries, répétitions ou durée, repos, consignes, versions plus facile et plus dure, cas où éviter l'exercice.
 3. **Lecteur guidé** : chrono pour le gainage et les étirements, bouton *Fait* pour les répétitions, repos minutés, côtés gauche et droite, annonces vocales.
-4. **Suivi de la douleur** : avant et après chaque séance. Le prochain programme retire ou adapte les exercices qui l'ont aggravée.
+4. **Images et vidéos** : chaque exercice est illustré par une démonstration animée (photos de début et de fin de mouvement, issues de la banque libre [free-exercise-db](https://github.com/yuhonas/free-exercise-db), domaine public). L'IA choisit l'illustration dans la banque ; sinon l'app la devine d'après le nom français. Tu peux la changer dans l'éditeur de séance (*Changer l'image*). Le bouton **Vidéo de démo** ouvre YouTube sur une recherche de l'exercice. Les images sont gardées en cache : une fois vues, elles s'affichent hors ligne.
+5. **Suivi de la douleur** : avant et après chaque séance. Le prochain programme retire ou adapte les exercices qui l'ont aggravée.
 
 Ce ne sont que des suggestions, pas un avis médical : en cas de douleur forte ou qui s'aggrave, consulte.
 

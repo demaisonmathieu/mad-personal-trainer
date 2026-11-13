@@ -18,6 +18,8 @@ object StrengthPrompt {
         painLogs: List<PainLog>,
         otherActivities: String? = null,
         now: Date = Date(),
+        /** Identifiants de la banque d'images utilisables pour illustrer les exercices */
+        imageIds: List<String> = emptyList(),
     ): String = buildString {
         val date = SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE).format(now)
         appendLine("Tu es un préparateur physique, spécialiste du renforcement musculaire et de la prévention des blessures chez les sportifs amateurs. Tu es prudent et pédagogue.")
@@ -95,6 +97,12 @@ object StrengthPrompt {
         appendLine(SCHEMA)
         appendLine("Écris le JSON de façon COMPACTE (une séance par ligne, sans indentation) pour qu'il ne soit pas coupé.")
         appendLine("reps OU duration_sec doit être renseigné (l'autre à null). rest_sec en secondes. per_side = true si l'exercice se fait de chaque côté.")
+        if (imageIds.isNotEmpty()) {
+            appendLine()
+            appendLine("## Illustrations")
+            appendLine("L'app affiche des photos de démonstration. Pour chaque exercice, mets dans image_id l'identifiant EXACT de la liste ci-dessous qui montre le même mouvement (ou un mouvement très proche), sinon null. N'invente pas d'identifiant.")
+            appendLine(imageIds.joinToString(","))
+        }
     }
 
     private fun fmt(v: Double) = if (v % 1.0 == 0.0) v.toInt().toString() else "%.1f".format(Locale.FRANCE, v)
@@ -117,9 +125,9 @@ object StrengthPrompt {
       "duration_min": 20,
       "exercises": [
         { "name": "Pont fessier", "sets": 3, "reps": 12, "duration_sec": null, "rest_sec": 45, "per_side": false,
-          "instructions": "string", "cues": "string", "easier": "string", "harder": "string", "avoid_if": "string" },
+          "instructions": "string", "cues": "string", "easier": "string", "harder": "string", "avoid_if": "string", "image_id": "Single_Leg_Glute_Bridge" },
         { "name": "Gainage latéral", "sets": 2, "reps": null, "duration_sec": 30, "rest_sec": 30, "per_side": true,
-          "instructions": "string", "cues": "string", "easier": "string", "harder": "string", "avoid_if": "string" }
+          "instructions": "string", "cues": "string", "easier": "string", "harder": "string", "avoid_if": "string", "image_id": "Side_Bridge" }
       ]
     }
   ]

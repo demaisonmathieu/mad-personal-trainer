@@ -1,6 +1,7 @@
 package com.mathieu.madtrainer.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,8 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mathieu.madtrainer.coach.ExerciseCatalog
 import com.mathieu.madtrainer.coach.StrengthExercise
 import com.mathieu.madtrainer.coach.StrengthPlayer
 import com.mathieu.madtrainer.coach.StrengthSession
@@ -45,7 +49,7 @@ import com.mathieu.madtrainer.data.formatDuration
 /** Édition d'une séance de renfo : jour, exercices (ordre par glisser-déposer), séries, reps / durée, repos. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StrengthSessionEditor(initial: StrengthSession, onSave: (StrengthSession) -> Unit, onCancel: () -> Unit) {
+fun StrengthSessionEditor(initial: StrengthSession, catalog: ExerciseCatalog, onSave: (StrengthSession) -> Unit, onCancel: () -> Unit) {
     var name by remember { mutableStateOf(initial.name) }
     var day by remember { mutableStateOf(initial.day) }
     var exercises by remember { mutableStateOf(initial.exercises) }
@@ -85,6 +89,7 @@ fun StrengthSessionEditor(initial: StrengthSession, onSave: (StrengthSession) ->
                 e = e,
                 count = exercises.size,
                 reorder = reorder,
+                catalog = catalog,
                 onChange = { n -> exercises = exercises.toMutableList().also { it[i] = n } },
                 onDelete = { exercises = exercises.toMutableList().also { it.removeAt(i) } },
                 onSwap = { a, b -> exercises = exercises.swapped(a, b) },
@@ -109,10 +114,12 @@ private fun ExerciseCard(
     e: StrengthExercise,
     count: Int,
     reorder: ReorderState,
+    catalog: ExerciseCatalog,
     onChange: (StrengthExercise) -> Unit,
     onDelete: () -> Unit,
     onSwap: (Int, Int) -> Unit,
 ) {
+    val context = LocalContext.current
     Card(Modifier.fillMaxWidth().reorderItem(reorder, index)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -136,6 +143,28 @@ private fun ExerciseCard(
                     NumberField("Secondes", e.duration_sec ?: 30, { onChange(e.copy(duration_sec = it.coerceIn(5, 600))) }, Modifier.weight(1f))
                 }
                 NumberField("Repos (s)", e.rest_sec, { onChange(e.copy(rest_sec = it.coerceIn(0, 300))) }, Modifier.weight(1f))
+            }
+            // Illustration (banque d'images) + vidéo YouTube
+            var picking by remember { mutableStateOf(false) }
+            val illus = catalog.find(e)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExerciseIllustration(illus, modifier = Modifier.weight(1f).clickable { picking = true }, maxHeight = 110.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(illus?.n ?: "Aucune illustration", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { picking = true }) { Text("Changer l'image") }
+                    TextButton(onClick = { openYoutubeDemo(context, e.name) }) { Text("Vidéo YouTube") }
+                }
+            }
+            if (picking) {
+                ExerciseImagePicker(
+                    catalog = catalog,
+                    initialQuery = e.name,
+                    onPick = { picked ->
+                        onChange(e.copy(image_id = picked?.id ?: ""))
+                        picking = false
+                    },
+                    onDismiss = { picking = false },
+                )
             }
             OutlinedTextField(
                 e.instructions, { onChange(e.copy(instructions = it)) },

@@ -133,7 +133,7 @@ fun WeekScreen(
         return
     }
     editingStrength?.let { (idx, s) ->
-        StrengthSessionEditor(s, onSave = {
+        StrengthSessionEditor(s, vm.exerciseCatalog, onSave = {
             vm.updateStrengthSession(idx, it)
             editingStrength = null
         }, onCancel = { editingStrength = null })

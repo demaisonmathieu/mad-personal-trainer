@@ -15,8 +15,19 @@ object CoachParser {
 
     /** Extrait le bloc JSON de la réponse de l'IA (bloc ```json, sinon du premier « { » au dernier « } »). */
     fun extractJson(response: String): String? {
-        val fence = Regex("```(?:json)?\\s*(\\{.*?})\\s*```", RegexOption.DOT_MATCHES_ALL)
-        fence.findAll(response).lastOrNull()?.let { return it.groupValues[1] }
+        // Sans expression régulière (le moteur d'Android refuse certaines syntaxes acceptées par Java) :
+        // on prend le DERNIER bloc ``` … ``` qui contient un objet JSON.
+        var searchEnd = response.length
+        while (true) {
+            val close = response.lastIndexOf("```", searchEnd - 1)
+            if (close <= 0) break
+            val open = response.lastIndexOf("```", close - 1)
+            if (open < 0) break
+            val inner = response.substring(open + 3, close).trim().removePrefix("json").removePrefix("JSON").trim()
+            if (inner.startsWith("{") && inner.endsWith("}")) return inner
+            searchEnd = open
+        }
+        // Pas de bloc ``` : du premier « { » au dernier « } »
         val start = response.indexOf('{')
         val end = response.lastIndexOf('}')
         return if (start >= 0 && end > start) response.substring(start, end + 1) else null

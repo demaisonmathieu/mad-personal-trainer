@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
 import com.mathieu.madtrainer.LogExporter
+import com.mathieu.madtrainer.update.UpdateState
+import com.mathieu.madtrainer.update.Updater
 import com.mathieu.madtrainer.ble.ConnState
 
 private fun blePermissions(): Array<String> =
@@ -69,6 +71,7 @@ fun DeviceScreen(vm: AppViewModel) {
     val log by bike.log.collectAsStateWithLifecycle()
     val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val update by vm.update.collectAsStateWithLifecycle()
     var permError by remember { mutableStateOf<String?>(null) }
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -230,6 +233,32 @@ fun DeviceScreen(vm: AppViewModel) {
                 }
             }
             }
+        }
+
+        item {
+          Column {
+            SectionTitle("Application")
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("MAD Personal Trainer ${Updater.currentVersionName}", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            when (val u = update) {
+                                UpdateState.Checking -> "Recherche de mise à jour…"
+                                UpdateState.UpToDate -> "À jour"
+                                is UpdateState.Available -> "Version ${u.info.versionName} disponible"
+                                is UpdateState.Downloading -> "Téléchargement… ${(u.progress * 100).toInt()} %"
+                                is UpdateState.ReadyToInstall -> "Prête à installer"
+                                is UpdateState.Error -> "Erreur : ${u.message}"
+                                UpdateState.Idle -> " "
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    OutlinedButton(onClick = { vm.checkForUpdate() }) { Text("Vérifier") }
+                }
+            }
+          }
         }
 
         item {

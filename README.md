@@ -25,6 +25,12 @@ Il faut être connecté à GitHub dans le navigateur si le dépôt est privé. C
 
 Pour installer : ouvre le lien, ouvre l'APK téléchargé, autorise « Installer des applis inconnues » pour le navigateur, puis touche *Installer*.
 
+## Mises à jour depuis l'app
+
+Au démarrage, l'app interroge la dernière Release GitHub (le dépôt doit être **public**). Si une version plus récente existe, un bandeau « Version 1.0.N disponible » apparaît. **Installer** télécharge l'APK et ouvre l'installeur Android, qui demande une confirmation. La nouvelle version s'installe par-dessus l'ancienne, sans perte de données.
+
+La première fois, Android demande d'autoriser MAD Personal Trainer à installer des applis : active l'option, reviens dans l'app et appuie de nouveau sur **Installer**. Le bouton **Vérifier** (onglet Vélo, carte Application) relance la recherche à la main.
+
 ## Envoyer le journal Bluetooth
 
 Onglet **Vélo**, puis **Envoyer** à côté de « Journal Bluetooth », puis choisis **Drive** (compte Scalizer). Le fichier `mad-trainer-log-AAAAMMJJ-HHMMSS.txt` contient les services GATT de la console, les événements et toutes les trames brutes reçues et envoyées. C'est ce qu'il faut pour diagnostiquer le protocole.

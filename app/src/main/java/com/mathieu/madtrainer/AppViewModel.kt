@@ -13,6 +13,8 @@ import com.mathieu.madtrainer.data.StepPosition
 import com.mathieu.madtrainer.data.Workout
 import com.mathieu.madtrainer.data.WorkoutEngine
 import com.mathieu.madtrainer.data.WorkoutStep
+import com.mathieu.madtrainer.update.UpdateState
+import com.mathieu.madtrainer.update.Updater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,8 +47,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var ticker: Job? = null
     private var appliedStep = -1
 
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update
+
     init {
         viewModelScope.launch { repo.load() }
+        checkForUpdate()
+    }
+
+    // ------------------------------------------------------------ mises à jour
+
+    fun checkForUpdate() {
+        if (_update.value is UpdateState.Checking || _update.value is UpdateState.Downloading) return
+        _update.value = UpdateState.Checking
+        viewModelScope.launch {
+            _update.value = runCatching { Updater.check() }.fold(
+                onSuccess = { info -> if (info != null) UpdateState.Available(info) else UpdateState.UpToDate },
+                onFailure = { UpdateState.Error(it.message ?: "Vérification impossible") },
+            )
+        }
+    }
+
+    /** Télécharge puis lance l'installeur Android. */
+    fun downloadAndInstall() {
+        val app = getApplication<Application>()
+        val info = when (val st = _update.value) {
+            is UpdateState.Available -> st.info
+            is UpdateState.ReadyToInstall -> {
+                installUpdate(st.file)
+                return
+            }
+            else -> return
+        }
+        _update.value = UpdateState.Downloading(info, 0f)
+        viewModelScope.launch {
+            runCatching {
+                Updater.download(app, info) { p -> _update.value = UpdateState.Downloading(info, p) }
+            }.onSuccess { file ->
+                _update.value = UpdateState.ReadyToInstall(info, file)
+                installUpdate(file)
+            }.onFailure {
+                _update.value = UpdateState.Error(it.message ?: "Téléchargement impossible")
+            }
+        }
+    }
+
+    private fun installUpdate(file: java.io.File) {
+        val app = getApplication<Application>()
+        if (!Updater.canInstall(app)) {
+            // Android demande d'autoriser l'app une seule fois ; revenir ensuite et appuyer sur Installer
+            Updater.openInstallPermissionSettings(app)
+        } else {
+            Updater.install(app, file)
+        }
+    }
+
+    fun dismissUpdate() {
+        _update.value = UpdateState.Idle
     }
 
     // ------------------------------------------------------------ séance

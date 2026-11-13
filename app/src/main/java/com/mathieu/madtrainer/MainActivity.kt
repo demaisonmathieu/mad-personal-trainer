@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import com.mathieu.madtrainer.ui.DeviceScreen
 import com.mathieu.madtrainer.ui.MadTheme
 import com.mathieu.madtrainer.ui.HistoryScreen
 import com.mathieu.madtrainer.ui.SessionScreen
+import com.mathieu.madtrainer.ui.UpdateBanner
 import com.mathieu.madtrainer.ui.WorkoutsScreen
 
 class MainActivity : ComponentActivity() {
@@ -57,6 +60,9 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
     val state by vm.bike.state.collectAsStateWithLifecycle()
 
     Scaffold(
+        topBar = {
+            Column(Modifier.statusBarsPadding()) { UpdateBanner(vm) }
+        },
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { t ->

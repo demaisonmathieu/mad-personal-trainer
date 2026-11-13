@@ -617,9 +617,27 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
 
     // ---------------------------------------------------------------- commandes
 
+    private var lastNotControllableLog = 0L
+
+    /** Explique (au plus toutes les 10 s) pourquoi une consigne ne peut pas partir. */
+    private fun logNotControllable() {
+        val now = System.currentTimeMillis()
+        if (now - lastNotControllableLog < 10_000) return
+        lastNotControllableLog = now
+        log(
+            when {
+                _state.value != ConnState.CONNECTED ->
+                    "Vélo non connecté : consigne ignorée. Reconnecte le vélo dans l'onglet Vélo."
+                !_caps.value.hasFtms && !_caps.value.legacyDomyos ->
+                    "« ${_deviceName.value} » n'est pas un vélo pilotable : connecte la console Domyos-EL dans la liste du haut (la montre se connecte dans la carte Cardio)."
+                else -> "La console n'accepte pas de commandes (pas de point de contrôle FTMS)."
+            },
+        )
+    }
+
     private suspend fun sendControl(bytes: ByteArray): Boolean {
         val cp = controlPoint ?: run {
-            log("Commande impossible : pas de point de contrôle")
+            logNotControllable()
             return false
         }
         log("→ ${bytes.toHex()}")
@@ -630,6 +648,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     }
 
     private suspend fun ensureControl() {
+        if (controlPoint == null) return
         if (!_caps.value.controlGranted) {
             sendControl(FtmsControl.requestControl())
             delay(300)

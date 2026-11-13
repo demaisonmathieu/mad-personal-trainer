@@ -97,6 +97,19 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
             }
         }
 
+        if (state == ConnState.CONNECTED && !caps.hasFtms && !caps.legacyDomyos) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth().clickable { onGoToDevice() },
+            ) {
+                Text(
+                    "L'appareil connecté n'est pas la console du vélo : déconnecte-le et choisis « Domyos-EL… » dans l'onglet Vélo.",
+                    Modifier.padding(12.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+
         summary?.let { SummaryCard(it) { vm.dismissSummary() } }
 
         LiveMetrics(metrics, session, vm)

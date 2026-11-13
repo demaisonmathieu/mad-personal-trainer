@@ -124,7 +124,7 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
                 Icon(Icons.Filled.PlayArrow, null)
                 Text("  Séance libre")
             }
-            workouts.forEach { w ->
+            workouts.filter { it.sport == com.mathieu.madtrainer.data.Sport.ELLIPTICAL }.forEach { w ->
                 Card(Modifier.fillMaxWidth().clickable { vm.startSession(w) }) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

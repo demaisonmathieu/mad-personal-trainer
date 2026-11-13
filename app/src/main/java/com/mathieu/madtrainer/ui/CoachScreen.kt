@@ -72,9 +72,10 @@ import java.util.Locale
 @Composable
 fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
-    val plan by vm.repo.plan.collectAsStateWithLifecycle()
+    val plans by vm.repo.plans.collectAsStateWithLifecycle()
     val coach by vm.coach.collectAsStateWithLifecycle()
     val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+    val plan = plans[settings.sport]
     val context = LocalContext.current
     var editingProfile by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
@@ -84,7 +85,7 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Mon coach", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Mon coach — ${settings.sport.label}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
         // ---------------------------------------------------------------- profil
         if (editingProfile) {
@@ -119,7 +120,10 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Générer mon programme", fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (settings.sport == com.mathieu.madtrainer.data.Sport.RUNNING) "Générer mon programme de course" else "Générer mon programme elliptique",
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(
                     "Le prompt contient ton profil, tes dernières séances et les capacités de ta machine. " +
                         "La réponse de l'IA crée automatiquement les séances dans Programmes.",
@@ -257,7 +261,7 @@ private fun PlanView(saved: SavedPlan, vm: AppViewModel, onStartWorkout: () -> U
                             )
                         }
                         IconButton(onClick = {
-                            vm.startSession(w)
+                            vm.launchWorkout(w)
                             onStartWorkout()
                         }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
                     }
@@ -326,6 +330,12 @@ private fun ProfileEditor(initial: UserProfile, onSave: (UserProfile) -> Unit, o
                 p.preferences, { p = p.copy(preferences = it) },
                 label = { Text("Préférences") },
                 placeholder = { Text("ex. j'aime les intervalles, séances le matin, pas plus de 45 min…") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                p.runningInfo, { p = p.copy(runningInfo = it) },
+                label = { Text("Repères running") },
+                placeholder = { Text("ex. 10 km en 55 min, 15 km par semaine, objectif semi en avril…") },
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(

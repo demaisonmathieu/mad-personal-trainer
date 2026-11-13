@@ -59,6 +59,27 @@ class CoachTest {
     }
 
     @Test
+    fun parsesRunningPlan() {
+        val response = """
+            ```json
+            { "plan_name": "10 km", "workouts": [
+              { "name": "Fractionné", "week": 2, "day": "Mardi", "steps": [
+                { "name": "Échauffement", "duration_sec": 600, "distance_m": null, "mode": "HR_ZONE", "target": 2 },
+                { "name": "1000 m", "duration_sec": 300, "distance_m": 1000, "mode": "PACE", "target": 300 },
+                { "name": "Récup", "duration_sec": 120, "mode": "FREE", "target": 0 }
+              ] } ] }
+            ```
+        """.trimIndent()
+        val plan = CoachParser.parse(response).getOrThrow()
+        val w = CoachParser.toWorkouts(plan, sport = com.mathieu.madtrainer.data.Sport.RUNNING)
+        assertEquals(com.mathieu.madtrainer.data.Sport.RUNNING, w[0].sport)
+        assertEquals(StepMode.HR_ZONE, w[0].steps[0].mode)
+        assertEquals(1000, w[0].steps[1].distanceM)
+        assertEquals(300, w[0].steps[1].durationSec) // 1 km à 5'00
+        assertEquals(StepMode.FREE, w[0].steps[2].mode)
+    }
+
+    @Test
     fun rejectsResponseWithoutJson() {
         assertTrue(CoachParser.parse("Désolé, je ne peux pas.").isFailure)
     }

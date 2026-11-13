@@ -63,7 +63,7 @@ private fun blePermissions(): Array<String> =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeviceScreen(vm: AppViewModel) {
+fun DeviceScreen(vm: AppViewModel, runningMode: Boolean = false) {
     val bike = vm.bike
     val state by bike.state.collectAsStateWithLifecycle()
     val scanning by bike.scanning.collectAsStateWithLifecycle()
@@ -100,7 +100,7 @@ fun DeviceScreen(vm: AppViewModel) {
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item {
+        if (!runningMode) item {
             Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -165,7 +165,7 @@ fun DeviceScreen(vm: AppViewModel) {
             }
         }
 
-        if (state == ConnState.DISCONNECTED && results.isNotEmpty()) {
+        if (!runningMode && state == ConnState.DISCONNECTED && results.isNotEmpty()) {
             item { SectionTitle("Appareils trouvés") }
             items(results, key = { it.address }) { r ->
                 Card(
@@ -193,7 +193,7 @@ fun DeviceScreen(vm: AppViewModel) {
             HeartRateCard(vm, onNeedPermission = { action -> withPermissions(action) })
         }
 
-        item {
+        if (!runningMode) item {
             Column {
             SectionTitle("Réglages console")
             Card(Modifier.fillMaxWidth()) {

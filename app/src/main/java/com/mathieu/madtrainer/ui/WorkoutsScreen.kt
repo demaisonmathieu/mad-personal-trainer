@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
 import com.mathieu.madtrainer.data.StepMode
+import com.mathieu.madtrainer.data.Sport
+import com.mathieu.madtrainer.data.formatPace
 import com.mathieu.madtrainer.data.Workout
 import com.mathieu.madtrainer.data.WorkoutStep
 import com.mathieu.madtrainer.data.formatDuration
@@ -55,7 +57,10 @@ import java.util.UUID
 
 @Composable
 fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
-    val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
+    val allWorkouts by vm.repo.workouts.collectAsStateWithLifecycle()
+    val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+    val sport = settings.sport
+    val workouts = allWorkouts.filter { it.sport == sport }
     var editing by remember { mutableStateOf<Workout?>(null) }
 
     editing?.let { w ->
@@ -75,7 +80,7 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { SectionTitle("Mes programmes", Modifier.padding(top = 8.dp)) }
+            item { SectionTitle("Mes programmes — ${sport.label}", Modifier.padding(top = 8.dp)) }
             items(workouts, key = { it.id }) { w ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
@@ -83,12 +88,14 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text(w.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "${formatDuration(w.totalSec)} · ${w.steps.size} étapes",
+                                    "${formatDuration(w.totalSec)} · ${w.steps.size} étapes" +
+                                        (if (w.totalDistanceM > 0) " · ${"%.1f".format(w.totalDistanceM / 1000.0)} km en distance" else "") +
+                                        (w.planWeek?.let { " · coach S$it" } ?: ""),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
                             IconButton(onClick = {
-                                vm.startSession(w)
+                                vm.launchWorkout(w)
                                 onStart()
                             }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
                             IconButton(onClick = { editing = w }) { Icon(Icons.Filled.Edit, "Modifier") }
@@ -105,13 +112,24 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
         }
         ExtendedFloatingActionButton(
             onClick = {
-                editing = Workout(
-                    steps = listOf(
-                        WorkoutStep("Échauffement", 300, StepMode.RESISTANCE, 3.0),
-                        WorkoutStep("Effort", 600, StepMode.RESISTANCE, 8.0),
-                        WorkoutStep("Retour au calme", 300, StepMode.RESISTANCE, 2.0),
-                    ),
-                )
+                editing = if (sport == Sport.RUNNING) {
+                    Workout(
+                        sport = Sport.RUNNING,
+                        steps = listOf(
+                            WorkoutStep("Échauffement", 600, StepMode.HR_ZONE, 2.0),
+                            WorkoutStep("Bloc principal", 1200, StepMode.PACE, 360.0),
+                            WorkoutStep("Retour au calme", 300, StepMode.FREE, 0.0),
+                        ),
+                    )
+                } else {
+                    Workout(
+                        steps = listOf(
+                            WorkoutStep("Échauffement", 300, StepMode.RESISTANCE, 3.0),
+                            WorkoutStep("Effort", 600, StepMode.RESISTANCE, 8.0),
+                            WorkoutStep("Retour au calme", 300, StepMode.RESISTANCE, 2.0),
+                        ),
+                    )
+                }
             },
             icon = { Icon(Icons.Filled.Add, null) },
             text = { Text("Nouveau") },
@@ -132,7 +150,8 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
         steps = steps.toMutableList().also { it[i] = s }
     }
 
-    val preview = Workout(initial.id, name, steps)
+    val run = initial.sport == Sport.RUNNING
+    val preview = initial.copy(name = name, steps = steps)
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -169,6 +188,7 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
                 step = s,
                 isFirst = i == 0,
                 isLast = i == steps.lastIndex,
+                running = run,
                 onChange = { update(i, it) },
                 onDelete = { steps = steps.toMutableList().also { l -> l.removeAt(i) } },
                 onMove = { delta ->
@@ -182,7 +202,10 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 24.dp)) {
                 OutlinedButton(
-                    onClick = { steps = steps + WorkoutStep("Étape ${steps.size + 1}", 120, StepMode.RESISTANCE, 5.0) },
+                    onClick = {
+                        steps = steps + if (run) WorkoutStep("Étape ${steps.size + 1}", 300, StepMode.HR_ZONE, 2.0)
+                        else WorkoutStep("Étape ${steps.size + 1}", 120, StepMode.RESISTANCE, 5.0)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Filled.Add, null)
@@ -194,8 +217,13 @@ private fun WorkoutEditor(initial: Workout, onSave: (Workout) -> Unit, onCancel:
                             val n = repeatCount.toIntOrNull()?.coerceIn(1, 50) ?: 0
                             val block = buildList {
                                 repeat(n) { k ->
-                                    add(WorkoutStep("Effort ${k + 1}", 60, StepMode.RESISTANCE, 10.0))
-                                    add(WorkoutStep("Récup ${k + 1}", 60, StepMode.RESISTANCE, 3.0))
+                                    if (run) {
+                                        add(WorkoutStep("400 m ${k + 1}", 120, StepMode.HR_ZONE, 4.0, distanceM = 400))
+                                        add(WorkoutStep("Récup ${k + 1}", 90, StepMode.FREE, 0.0))
+                                    } else {
+                                        add(WorkoutStep("Effort ${k + 1}", 60, StepMode.RESISTANCE, 10.0))
+                                        add(WorkoutStep("Récup ${k + 1}", 60, StepMode.RESISTANCE, 3.0))
+                                    }
                                 }
                             }
                             steps = steps + block
@@ -223,6 +251,7 @@ private fun StepEditor(
     step: WorkoutStep,
     isFirst: Boolean,
     isLast: Boolean,
+    running: Boolean,
     onChange: (WorkoutStep) -> Unit,
     onDelete: () -> Unit,
     onMove: (Int) -> Unit,
@@ -243,15 +272,26 @@ private fun StepEditor(
                 IconButton(onClick = { onMove(1) }, enabled = !isLast) { Icon(Icons.Filled.ArrowDownward, "Descendre") }
                 IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Supprimer") }
             }
+            val modes = if (running) {
+                listOf(StepMode.PACE to "Allure", StepMode.HR_ZONE to "Zone cardio", StepMode.FREE to "Libre")
+            } else {
+                listOf(StepMode.RESISTANCE to "Résistance", StepMode.POWER to "Puissance", StepMode.FREE to "Libre")
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(StepMode.RESISTANCE to "Résistance", StepMode.POWER to "Puissance", StepMode.FREE to "Libre").forEach { (m, label) ->
+                modes.forEach { (m, label) ->
                     FilterChip(
                         selected = step.mode == m,
                         onClick = {
-                            val t = when (m) {
-                                StepMode.POWER -> if (step.mode == StepMode.POWER) step.target else 100.0
-                                StepMode.RESISTANCE -> if (step.mode == StepMode.RESISTANCE) step.target else 5.0
-                                StepMode.FREE -> step.target
+                            val t = if (step.mode == m) {
+                                step.target
+                            } else {
+                                when (m) {
+                                    StepMode.POWER -> 100.0
+                                    StepMode.RESISTANCE -> 5.0
+                                    StepMode.PACE -> 360.0
+                                    StepMode.HR_ZONE -> 2.0
+                                    StepMode.FREE -> 0.0
+                                }
                             }
                             onChange(step.copy(mode = m, target = t))
                         },
@@ -259,7 +299,26 @@ private fun StepEditor(
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (running) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(step.distanceM == null, { onChange(step.copy(distanceM = null)) }, label = { Text("Durée") })
+                    FilterChip(step.distanceM != null, { onChange(step.copy(distanceM = step.distanceM ?: 1000)) }, label = { Text("Distance") })
+                }
+            }
+            if (running && step.distanceM != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NumberField(
+                        label = "Mètres",
+                        value = step.distanceM,
+                        onValue = { d ->
+                            val pace = if (step.mode == StepMode.PACE) step.target else 390.0
+                            onChange(step.copy(distanceM = d.coerceAtLeast(50), durationSec = (d / 1000.0 * pace).toInt().coerceAtLeast(10)))
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    RunTargetField(step, onChange, Modifier.weight(1f))
+                }
+            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 NumberField(
                     label = "Minutes",
                     value = step.durationSec / 60,
@@ -272,7 +331,9 @@ private fun StepEditor(
                     onValue = { onChange(step.copy(durationSec = (step.durationSec / 60) * 60 + it.coerceIn(0, 59))) },
                     modifier = Modifier.weight(1f),
                 )
-                if (step.mode != StepMode.FREE) {
+                if (running) {
+                    RunTargetField(step, onChange, Modifier.weight(1f))
+                } else if (step.mode != StepMode.FREE) {
                     NumberField(
                         label = if (step.mode == StepMode.POWER) "Watts" else "Niveau",
                         value = step.target.toInt(),
@@ -300,4 +361,38 @@ private fun NumberField(label: String, value: Int, onValue: (Int) -> Unit, modif
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier,
     )
+}
+
+/** Consigne running : allure (m:ss) ou zone cardio (1-5). */
+@Composable
+private fun RunTargetField(step: WorkoutStep, onChange: (WorkoutStep) -> Unit, modifier: Modifier) {
+    when (step.mode) {
+        StepMode.PACE -> {
+            var text by remember(step.target) { mutableStateOf(formatPace(step.target.toInt()).replace("'", ":").removeSuffix("\"")) }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { v ->
+                    text = v.filter { it.isDigit() || it == ':' }.take(5)
+                    val parts = text.split(':')
+                    val sec = if (parts.size == 2) {
+                        val m = parts[0].toIntOrNull()
+                        val s = parts[1].toIntOrNull()
+                        if (m != null && s != null && s < 60) m * 60 + s else null
+                    } else null
+                    sec?.takeIf { it in 150..900 }?.let { onChange(step.copy(target = it.toDouble())) }
+                },
+                label = { Text("Allure /km (m:ss)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = modifier,
+            )
+        }
+        StepMode.HR_ZONE -> NumberField(
+            label = "Zone (1-5)",
+            value = step.target.toInt(),
+            onValue = { onChange(step.copy(target = it.coerceIn(1, 5).toDouble())) },
+            modifier = modifier,
+        )
+        else -> Spacer(modifier)
+    }
 }

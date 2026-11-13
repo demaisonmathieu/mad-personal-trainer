@@ -40,6 +40,8 @@ data class UserProfile(
     val preferences: String = "",
     /** Contraintes : douleurs, genoux, horaires… (texte libre) */
     val constraints: String = "",
+    /** Repères running : chronos récents, km par semaine… (texte libre) */
+    val runningInfo: String = "",
 ) {
     val bmi: Double get() = weightKg / ((heightCm / 100.0) * (heightCm / 100.0))
 
@@ -54,6 +56,8 @@ data class CoachStep(
     val duration_sec: Int = 60,
     val mode: String = "RESISTANCE",
     val target: Double = 5.0,
+    /** Running : distance de l'étape en mètres (prioritaire sur la durée). */
+    val distance_m: Int? = null,
 )
 
 @Serializable

@@ -115,10 +115,12 @@ fun WorkoutProfile(
         if (total <= 0f) return@Canvas
         val maxRes = steps.filter { it.mode == StepMode.RESISTANCE }.maxOfOrNull { it.target }?.toFloat() ?: 1f
         val maxPow = steps.filter { it.mode == StepMode.POWER }.maxOfOrNull { it.target }?.toFloat() ?: 1f
+        // Allure : plus le nombre de s/km est petit, plus c'est intense
+        val minPace = steps.filter { it.mode == StepMode.PACE }.minOfOrNull { it.target }?.toFloat() ?: 300f
         var x = 0f
         steps.forEachIndexed { i, s ->
             val w = size.width * s.durationSec / total
-            val ratio = intensity(s, maxRes, maxPow)
+            val ratio = intensity(s, maxRes, maxPow, minPace)
             val h = size.height * (0.15f + 0.85f * ratio)
             drawRect(
                 color = if (currentIndex == null || i == currentIndex) active else inactive,
@@ -134,16 +136,20 @@ fun WorkoutProfile(
     }
 }
 
-private fun intensity(s: WorkoutStep, maxRes: Float, maxPow: Float): Float = when (s.mode) {
+private fun intensity(s: WorkoutStep, maxRes: Float, maxPow: Float, minPace: Float): Float = when (s.mode) {
     StepMode.FREE -> 0.2f
     StepMode.RESISTANCE -> (s.target.toFloat() / maxRes).coerceIn(0f, 1f)
     StepMode.POWER -> (s.target.toFloat() / maxPow).coerceIn(0f, 1f)
+    StepMode.PACE -> (minPace / s.target.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
+    StepMode.HR_ZONE -> (s.target.toFloat() / 5f).coerceIn(0f, 1f)
 }
 
 fun stepTargetText(s: WorkoutStep): String = when (s.mode) {
     StepMode.FREE -> "Libre"
     StepMode.RESISTANCE -> "Résistance %s".format(fmtNum(s.target))
     StepMode.POWER -> "${s.target.toInt()} W"
+    StepMode.PACE -> "Allure ${com.mathieu.madtrainer.data.formatPace(s.target.toInt())}/km"
+    StepMode.HR_ZONE -> "Zone ${s.target.toInt()}"
 }
 
 fun fmtNum(v: Double): String = if (v % 1.0 == 0.0) v.toInt().toString() else "%.1f".format(v)

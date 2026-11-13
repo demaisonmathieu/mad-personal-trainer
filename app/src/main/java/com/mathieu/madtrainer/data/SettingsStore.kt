@@ -24,6 +24,8 @@ data class Settings(
     val stravaRefresh: String = "",
     val stravaExpiresAt: Long = 0,
     val includeStrava: Boolean = true,
+    /** Mode global de l'app. */
+    val sport: Sport = Sport.ELLIPTICAL,
 ) {
     val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
 }
@@ -48,6 +50,7 @@ class SettingsStore(context: Context) {
         stravaRefresh = prefs.getString("stravaRefresh", "") ?: "",
         stravaExpiresAt = prefs.getLong("stravaExpiresAt", 0),
         includeStrava = prefs.getBoolean("includeStrava", true),
+        sport = runCatching { Sport.valueOf(prefs.getString("sport", "ELLIPTICAL")!!) }.getOrDefault(Sport.ELLIPTICAL),
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -67,6 +70,7 @@ class SettingsStore(context: Context) {
             .putString("stravaRefresh", s.stravaRefresh)
             .putLong("stravaExpiresAt", s.stravaExpiresAt)
             .putBoolean("includeStrava", s.includeStrava)
+            .putString("sport", s.sport.name)
             .apply()
         _settings.value = s
     }

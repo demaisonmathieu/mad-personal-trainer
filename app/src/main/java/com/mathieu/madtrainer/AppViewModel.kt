@@ -30,6 +30,11 @@ import com.mathieu.madtrainer.data.StepPosition
 import com.mathieu.madtrainer.data.Workout
 import com.mathieu.madtrainer.data.WorkoutEngine
 import com.mathieu.madtrainer.data.WorkoutStep
+import com.mathieu.madtrainer.data.Sport
+import com.mathieu.madtrainer.run.RunTracker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.mathieu.madtrainer.update.UpdateState
 import com.mathieu.madtrainer.update.Updater
 import kotlinx.coroutines.Job
@@ -99,7 +104,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun buildCoachPrompt(): String {
         val strava = if (settingsStore.settings.value.includeStrava) StravaSummary.describe(repo.strava.value) else null
-        return CoachPrompt.build(repo.profile.value, repo.sessions.value, equipment(), otherActivities = strava)
+        return CoachPrompt.build(
+            repo.profile.value, repo.sessions.value, equipment(),
+            otherActivities = strava, sport = settingsStore.settings.value.sport,
+        )
     }
 
     // ------------------------------------------------------------ Strava
@@ -191,9 +199,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val eq = equipment()
         CoachParser.parse(response).fold(
             onSuccess = { plan ->
-                val workouts = CoachParser.toWorkouts(plan, eq.resistanceMin, eq.resistanceMax)
+                val sport = settingsStore.settings.value.sport
+                val workouts = CoachParser.toWorkouts(plan, eq.resistanceMin, eq.resistanceMax, sport)
                 viewModelScope.launch {
-                    repo.savePlan(SavedPlan(System.currentTimeMillis(), plan, response), workouts)
+                    repo.savePlan(sport, SavedPlan(System.currentTimeMillis(), plan, response), workouts)
                     _coach.value = CoachState.Done(workouts.size)
                 }
             },
@@ -223,6 +232,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val update: StateFlow<UpdateState> = _update
+
+    // ------------------------------------------------------------ running
+
+    fun setSport(s: Sport) = settingsStore.update { it.copy(sport = s) }
+
+    /** Programme running choisi, lancé depuis l'écran Course (permissions GPS d'abord). */
+    private val _pendingRun = MutableStateFlow<Workout?>(null)
+    val pendingRun: StateFlow<Workout?> = _pendingRun
+
+    fun selectRunWorkout(w: Workout?) {
+        _pendingRun.value = w
+    }
+
+    /** Bouton ▶ d'un programme : elliptique = démarre ; running = prépare l'écran Course. */
+    fun launchWorkout(w: Workout) {
+        if (w.sport == Sport.RUNNING) _pendingRun.value = w else startSession(w)
+    }
+
+    /** Sauvegarde indépendante du ViewModel : une course peut finir écran éteint. */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    init {
+        RunTracker.init(app)
+        RunTracker.heartRate = { hr.bpm.value }
+        RunTracker.maxHr = { repo.profile.value.estimatedMaxHr }
+        RunTracker.weightKg = { repo.profile.value.weightKg }
+        RunTracker.onFinished = { rec -> appScope.launch { repo.saveSession(rec) } }
+    }
 
     init {
         // On n'attend le vélo que pendant la courte phase de découverte des services (quelques secondes)
@@ -382,7 +419,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         when (step.mode) {
             StepMode.RESISTANCE -> bike.setResistanceLevel(step.target)
             StepMode.POWER -> bike.setTargetPower(step.target.toInt())
-            StepMode.FREE -> Unit
+            else -> Unit
         }
     }
 

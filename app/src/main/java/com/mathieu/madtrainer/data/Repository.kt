@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -18,7 +19,9 @@ class Repository(context: Context) {
     private val workoutsFile = File(context.filesDir, "workouts.json")
     private val sessionsDir = File(context.filesDir, "sessions").apply { mkdirs() }
     private val profileFile = File(context.filesDir, "profile.json")
-    private val planFile = File(context.filesDir, "coach_plan.json")
+    private val planFile = File(context.filesDir, "coach_plan.json") // ancien format (elliptique)
+    private val plansFile = File(context.filesDir, "coach_plans.json")
+    private val plansSerializer = MapSerializer(Sport.serializer(), SavedPlan.serializer())
     private val stravaFile = File(context.filesDir, "strava.json")
 
     private val _strava = MutableStateFlow(StravaCache())
@@ -26,8 +29,9 @@ class Repository(context: Context) {
 
     private val _profile = MutableStateFlow(UserProfile())
     val profile: StateFlow<UserProfile> = _profile
-    private val _plan = MutableStateFlow<SavedPlan?>(null)
-    val plan: StateFlow<SavedPlan?> = _plan
+    /** Un plan du coach par sport. */
+    private val _plans = MutableStateFlow<Map<Sport, SavedPlan>>(emptyMap())
+    val plans: StateFlow<Map<Sport, SavedPlan>> = _plans
 
     private val _workouts = MutableStateFlow<List<Workout>>(emptyList())
     val workouts: StateFlow<List<Workout>> = _workouts
@@ -40,11 +44,18 @@ class Repository(context: Context) {
         }.getOrElse {
             WorkoutEngine.defaultWorkouts().also { writeWorkouts(it) }
         }
+        // Programmes running d'exemple à la première utilisation du mode Running
+        if (_workouts.value.none { it.sport == Sport.RUNNING }) {
+            _workouts.value = _workouts.value + RunEngine.defaultRunWorkouts()
+            writeWorkouts(_workouts.value)
+        }
         _profile.value = runCatching { json.decodeFromString(UserProfile.serializer(), profileFile.readText()) }
             .getOrDefault(UserProfile())
         _strava.value = runCatching { json.decodeFromString(StravaCache.serializer(), stravaFile.readText()) }
             .getOrDefault(StravaCache())
-        _plan.value = runCatching { json.decodeFromString(SavedPlan.serializer(), planFile.readText()) }.getOrNull()
+        _plans.value = runCatching { json.decodeFromString(plansSerializer, plansFile.readText()) }.getOrNull()
+            ?: runCatching { mapOf(Sport.ELLIPTICAL to json.decodeFromString(SavedPlan.serializer(), planFile.readText())) }
+                .getOrDefault(emptyMap())
         _sessions.value = sessionsDir.listFiles().orEmpty()
             .filter { it.extension == "json" }
             .mapNotNull { f -> runCatching { json.decodeFromString(SessionRecord.serializer(), f.readText()) }.getOrNull() }
@@ -66,14 +77,15 @@ class Repository(context: Context) {
     }
 
     /** Enregistre le plan du coach et remplace les séances du plan précédent. */
-    suspend fun savePlan(plan: SavedPlan, workouts: List<Workout>) = withContext(Dispatchers.IO) {
-        val oldIds = _plan.value?.workoutIds.orEmpty().toSet()
+    suspend fun savePlan(sport: Sport, plan: SavedPlan, workouts: List<Workout>) = withContext(Dispatchers.IO) {
+        val oldIds = _plans.value[sport]?.workoutIds.orEmpty().toSet()
         val list = _workouts.value.filterNot { it.id in oldIds } + workouts
         writeWorkouts(list)
         _workouts.value = list
         val saved = plan.copy(workoutIds = workouts.map { it.id })
-        planFile.writeText(json.encodeToString(SavedPlan.serializer(), saved))
-        _plan.value = saved
+        val all = _plans.value + (sport to saved)
+        plansFile.writeText(json.encodeToString(plansSerializer, all))
+        _plans.value = all
     }
 
     suspend fun saveWorkout(w: Workout) = withContext(Dispatchers.IO) {

@@ -31,6 +31,23 @@ Au démarrage, l'app interroge la dernière Release GitHub (le dépôt doit êtr
 
 La première fois, Android demande d'autoriser MAD Personal Trainer à installer des applis : active l'option, reviens dans l'app et appuie de nouveau sur **Installer**. Le bouton **Vérifier** (onglet Vélo, carte Application) relance la recherche à la main.
 
+## Mode Running
+
+Le sélecteur **Elliptique / Running**, en haut de l'app, bascule tous les onglets. On ne peut pas changer de mode pendant une séance.
+
+- **Capteurs** : la montre cardio.
+- **Course** : sortie en extérieur.
+  - Mesures : distance et allure par le GPS du téléphone, cardio par la montre.
+  - Guidage : annonces vocales en français et vibrations à chaque étape, à chaque kilomètre, et quand il faut accélérer ou ralentir (allure ±15 s/km, ou zone cardio).
+  - Écran éteint : le suivi continue (service de premier plan, notification avec le temps, la distance et l'allure).
+- **Programmes** : séances running par étapes.
+  - Chaque étape se termine à une **durée** ou à une **distance** (ex. 400 m).
+  - La consigne est une **allure** (m:ss/km), une **zone cardio** (1 à 5) ou libre.
+- **Historique** : distance, allure, cardio, temps au kilomètre et tracé du parcours.
+- **Coach** : prompt et plan propres au running. Ajoute tes *Repères running* dans le profil.
+
+Autorisations demandées au premier départ : localisation précise et notifications.
+
 ## Coach personnel (IA)
 
 Onglet **Coach** :

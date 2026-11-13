@@ -225,7 +225,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val update: StateFlow<UpdateState> = _update
 
     init {
-        hr.isBikeBusy = { bike.state.value == ConnState.CONNECTING || bike.state.value == ConnState.DISCOVERING }
+        // On n'attend le vélo que pendant la courte phase de découverte des services (quelques secondes)
+        hr.isBikeBusy = { bike.state.value == ConnState.DISCOVERING }
         viewModelScope.launch { repo.load() }
         checkForUpdate()
         reconnectHeartRate()

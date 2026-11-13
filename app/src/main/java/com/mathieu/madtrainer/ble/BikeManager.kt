@@ -228,7 +228,16 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
 
     // ---------------------------------------------------------------- connexion
 
+    private var bikeReconnectAttempts = 0
+    private var bikeConnectTimeout: Job? = null
+
+    /** Connexion demandée par l'utilisateur : remet à zéro le compteur d'essais. */
     fun connect(address: String, name: String?) {
+        bikeReconnectAttempts = 0
+        connectInternal(address, name)
+    }
+
+    private fun connectInternal(address: String, name: String?) {
         stopScan()
         closeGatt()
         val device = runCatching { adapter?.getRemoteDevice(address) }.getOrNull()
@@ -245,6 +254,38 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         _caps.value = Capabilities()
         log("Connexion à ${_deviceName.value}…")
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        // Console éteinte : Android met ~30 s à abandonner et bloque la radio (montre comprise) → 15 s max
+        bikeConnectTimeout?.cancel()
+        bikeConnectTimeout = scope.launch {
+            delay(15_000)
+            if (_state.value == ConnState.CONNECTING) {
+                log("La console ne répond pas (éteinte ou trop loin ?)")
+                closeGatt()
+                onLinkLost()
+            }
+        }
+    }
+
+    /** Reconnexion espacée (3 s, 10 s, 20 s, 30 s) puis abandon : on ne monopolise pas le Bluetooth. */
+    private fun onLinkLost() {
+        _state.value = ConnState.DISCONNECTED
+        _caps.value = _caps.value.copy(controlGranted = false)
+        val addr = targetAddress
+        if (!wantConnected || addr == null) return
+        bikeReconnectAttempts++
+        if (bikeReconnectAttempts > 4) {
+            wantConnected = false
+            log("Vélo injoignable : reconnexion abandonnée. Pédale pour réveiller la console puis reconnecte.")
+            return
+        }
+        val wait = when (bikeReconnectAttempts) { 1 -> 3_000L; 2 -> 10_000L; 3 -> 20_000L; else -> 30_000L }
+        scope.launch {
+            delay(wait)
+            if (wantConnected && _state.value == ConnState.DISCONNECTED) {
+                log("Reconnexion au vélo (essai $bikeReconnectAttempts/4)…")
+                connectInternal(addr, _deviceName.value)
+            }
+        }
     }
 
     fun disconnect() {
@@ -261,6 +302,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         }
         gatt = null
         controlPoint = null
+        bikeConnectTimeout?.cancel()
         legacyJob?.cancel()
         legacyJob = null
         legacyWriteCh = null
@@ -277,6 +319,8 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
             scope.launch {
                 if (g != gatt) return@launch
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    bikeConnectTimeout?.cancel()
+                    bikeReconnectAttempts = 0
                     log("Connecté, découverte des services…")
                     _state.value = ConnState.DISCOVERING
                     delay(300)
@@ -286,16 +330,7 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     log("Connexion perdue (status $status)")
                     closeGatt()
-                    _state.value = ConnState.DISCONNECTED
-                    _caps.value = _caps.value.copy(controlGranted = false)
-                    val addr = targetAddress
-                    if (wantConnected && addr != null) {
-                        delay(3000)
-                        if (wantConnected && _state.value == ConnState.DISCONNECTED) {
-                            log("Reconnexion…")
-                            connect(addr, _deviceName.value)
-                        }
-                    }
+                    onLinkLost()
                 }
             }
         }
@@ -626,8 +661,10 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         lastNotControllableLog = now
         log(
             when {
+                _state.value != ConnState.CONNECTED && !wantConnected ->
+                    "Séance sans vélo connecté : seules les données de la montre sont enregistrées."
                 _state.value != ConnState.CONNECTED ->
-                    "Vélo non connecté : consigne ignorée. Reconnecte le vélo dans l'onglet Vélo."
+                    "Vélo en cours de connexion : consigne ignorée pour l'instant."
                 !_caps.value.hasFtms && !_caps.value.legacyDomyos ->
                     "« ${_deviceName.value} » n'est pas un vélo pilotable : connecte la console Domyos-EL dans la liste du haut (la montre se connecte dans la carte Cardio)."
                 else -> "La console n'accepte pas de commandes (pas de point de contrôle FTMS)."

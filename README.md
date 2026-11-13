@@ -45,6 +45,20 @@ Onglet **Coach** :
 
 Un nouveau plan remplace les séances du plan précédent. Tes séances perso ne sont pas touchées.
 
+## Strava
+
+Dans l'onglet **Coach**, carte **Strava** : l'app récupère tes activités des 90 derniers jours (course, vélo, marche…) et ton poids. Le prompt du coach en tient compte : volume hebdomadaire par sport, cardio, et dernières séances.
+
+Configuration, à faire une seule fois :
+
+1. Sur https://www.strava.com/settings/api, crée une application :
+   - **Nom** : MAD Personal Trainer
+   - **Catégorie** : Training
+   - **Site web** : http://localhost
+   - **Authorization Callback Domain** : `localhost`
+2. Dans l'app, ouvre *Configurer*, colle le **Client ID** et le **Client Secret**, puis appuie sur *Se connecter avec Strava*. Autorise l'accès aux activités.
+3. *Synchroniser* rafraîchit les données. L'interrupteur *Inclure dans le prompt* permet d'exclure Strava du prompt.
+
 ## Cardio : montre ou ceinture
 
 L'onglet **Vélo** comporte une carte **Cardio (montre ou ceinture)**. Elle accepte tout appareil cardio Bluetooth standard : ceinture, ou montre en mode diffusion.

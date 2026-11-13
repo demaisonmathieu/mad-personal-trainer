@@ -3,6 +3,7 @@ package com.mathieu.madtrainer.data
 import android.content.Context
 import com.mathieu.madtrainer.coach.SavedPlan
 import com.mathieu.madtrainer.coach.UserProfile
+import com.mathieu.madtrainer.strava.StravaCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +19,10 @@ class Repository(context: Context) {
     private val sessionsDir = File(context.filesDir, "sessions").apply { mkdirs() }
     private val profileFile = File(context.filesDir, "profile.json")
     private val planFile = File(context.filesDir, "coach_plan.json")
+    private val stravaFile = File(context.filesDir, "strava.json")
+
+    private val _strava = MutableStateFlow(StravaCache())
+    val strava: StateFlow<StravaCache> = _strava
 
     private val _profile = MutableStateFlow(UserProfile())
     val profile: StateFlow<UserProfile> = _profile
@@ -37,6 +42,8 @@ class Repository(context: Context) {
         }
         _profile.value = runCatching { json.decodeFromString(UserProfile.serializer(), profileFile.readText()) }
             .getOrDefault(UserProfile())
+        _strava.value = runCatching { json.decodeFromString(StravaCache.serializer(), stravaFile.readText()) }
+            .getOrDefault(StravaCache())
         _plan.value = runCatching { json.decodeFromString(SavedPlan.serializer(), planFile.readText()) }.getOrNull()
         _sessions.value = sessionsDir.listFiles().orEmpty()
             .filter { it.extension == "json" }
@@ -46,6 +53,11 @@ class Repository(context: Context) {
 
     private fun writeWorkouts(list: List<Workout>) {
         workoutsFile.writeText(json.encodeToString(ListSerializer(Workout.serializer()), list))
+    }
+
+    suspend fun saveStrava(c: StravaCache) = withContext(Dispatchers.IO) {
+        stravaFile.writeText(json.encodeToString(StravaCache.serializer(), c))
+        _strava.value = c
     }
 
     suspend fun saveProfile(p: UserProfile) = withContext(Dispatchers.IO) {

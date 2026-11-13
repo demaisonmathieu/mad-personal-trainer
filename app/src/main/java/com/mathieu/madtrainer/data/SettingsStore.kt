@@ -17,7 +17,16 @@ data class Settings(
     /** Coach IA : clé API Anthropic (optionnelle) et modèle. */
     val anthropicKey: String = "",
     val anthropicModel: String = "claude-sonnet-5-5",
-)
+    /** Strava : application déclarée par l'utilisateur + jetons OAuth. */
+    val stravaClientId: String = "",
+    val stravaClientSecret: String = "",
+    val stravaAccess: String = "",
+    val stravaRefresh: String = "",
+    val stravaExpiresAt: Long = 0,
+    val includeStrava: Boolean = true,
+) {
+    val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
+}
 
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("madtrainer", Context.MODE_PRIVATE)
@@ -33,6 +42,12 @@ class SettingsStore(context: Context) {
         hrName = prefs.getString("hrName", null),
         anthropicKey = prefs.getString("anthropicKey", "") ?: "",
         anthropicModel = prefs.getString("anthropicModel", "claude-sonnet-5-5") ?: "claude-sonnet-5-5",
+        stravaClientId = prefs.getString("stravaClientId", "") ?: "",
+        stravaClientSecret = prefs.getString("stravaClientSecret", "") ?: "",
+        stravaAccess = prefs.getString("stravaAccess", "") ?: "",
+        stravaRefresh = prefs.getString("stravaRefresh", "") ?: "",
+        stravaExpiresAt = prefs.getLong("stravaExpiresAt", 0),
+        includeStrava = prefs.getBoolean("includeStrava", true),
     )
 
     fun update(transform: (Settings) -> Settings) {
@@ -46,6 +61,12 @@ class SettingsStore(context: Context) {
             .putString("hrName", s.hrName)
             .putString("anthropicKey", s.anthropicKey)
             .putString("anthropicModel", s.anthropicModel)
+            .putString("stravaClientId", s.stravaClientId)
+            .putString("stravaClientSecret", s.stravaClientSecret)
+            .putString("stravaAccess", s.stravaAccess)
+            .putString("stravaRefresh", s.stravaRefresh)
+            .putLong("stravaExpiresAt", s.stravaExpiresAt)
+            .putBoolean("includeStrava", s.includeStrava)
             .apply()
         _settings.value = s
     }

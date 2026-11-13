@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
 import com.mathieu.madtrainer.CoachState
+import com.mathieu.madtrainer.StravaState
+import com.mathieu.madtrainer.strava.sportLabel
 import com.mathieu.madtrainer.coach.Goal
 import com.mathieu.madtrainer.coach.Level
 import com.mathieu.madtrainer.coach.SavedPlan
@@ -107,6 +110,8 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
                 }
             }
         }
+
+        StravaCard(vm)
 
         // ---------------------------------------------------------------- génération
         Card(
@@ -380,4 +385,94 @@ private fun sharePrompt(context: Context, text: String) {
         putExtra(Intent.EXTRA_TEXT, text)
     }
     context.startActivity(Intent.createChooser(send, "Envoyer le prompt à…").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+
+private val StravaOrange = androidx.compose.ui.graphics.Color(0xFFFC4C02)
+
+@Composable
+private fun StravaCard(vm: AppViewModel) {
+    val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+    val cache by vm.repo.strava.collectAsStateWithLifecycle()
+    val state by vm.stravaState.collectAsStateWithLifecycle()
+    val profile by vm.repo.profile.collectAsStateWithLifecycle()
+    var showSetup by remember { mutableStateOf(false) }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Strava", fontWeight = FontWeight.Bold, color = StravaOrange, modifier = Modifier.weight(1f))
+                if (settings.stravaConnected) {
+                    Text("Inclure dans le prompt ", style = MaterialTheme.typography.bodySmall)
+                    Switch(settings.includeStrava, { v -> vm.settingsStore.update { it.copy(includeStrava = v) } })
+                }
+            }
+            if (settings.stravaConnected) {
+                Text(cache.athleteName.ifBlank { "Compte connecté" }, fontWeight = FontWeight.SemiBold)
+                if (cache.lastSync > 0) {
+                    val byS = cache.activities.groupBy { sportLabel(it.sport) }.mapValues { it.value.size }
+                    Text(
+                        "${cache.activities.size} activités sur 90 jours · synchro " +
+                            SimpleDateFormat("d MMM HH:mm", Locale.FRANCE).format(Date(cache.lastSync)),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (byS.isNotEmpty()) {
+                        Text(byS.entries.sortedByDescending { it.value }.joinToString(" · ") { "${it.key} ${it.value}" }, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                cache.weightKg?.let { w ->
+                    if (kotlin.math.abs(w - profile.weightKg) >= 0.1) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Poids Strava : ${fmtNum(w)} kg", modifier = Modifier.weight(1f))
+                            TextButton(onClick = { vm.useStravaWeight() }) { Text("Utiliser") }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { vm.syncStrava() }, enabled = state != StravaState.Working) { Text("Synchroniser") }
+                    TextButton(onClick = { vm.disconnectStrava() }) { Text("Déconnecter") }
+                }
+            } else {
+                Text(
+                    "Connecte Strava pour que le coach tienne compte de toutes tes activités (course, vélo, marche…) des 90 derniers jours.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = { showSetup = !showSetup }) {
+                    Text(if (showSetup) "Masquer la configuration" else "Configurer (une seule fois)")
+                }
+                if (showSetup || (settings.stravaClientId.isNotBlank() && settings.stravaClientSecret.isBlank())) {
+                    Text(
+                        "1. Sur strava.com/settings/api, crée une application (nom : MAD Personal Trainer, site : http://localhost).\n" +
+                            "2. Authorization Callback Domain : localhost\n" +
+                            "3. Recopie ici le Client ID et le Client Secret.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        settings.stravaClientId, { v -> vm.settingsStore.update { it.copy(stravaClientId = v.trim()) } },
+                        label = { Text("Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    OutlinedTextField(
+                        settings.stravaClientSecret, { v -> vm.settingsStore.update { it.copy(stravaClientSecret = v.trim()) } },
+                        label = { Text("Client Secret") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                Button(
+                    onClick = { vm.connectStrava() },
+                    enabled = settings.stravaClientId.isNotBlank() && settings.stravaClientSecret.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Se connecter avec Strava") }
+            }
+            when (val st = state) {
+                StravaState.Working -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text("  Synchronisation Strava…", style = MaterialTheme.typography.bodySmall)
+                }
+                is StravaState.Ok -> Text(st.message, style = MaterialTheme.typography.bodySmall)
+                is StravaState.Error -> Text(st.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                StravaState.Idle -> Unit
+            }
+        }
+    }
 }

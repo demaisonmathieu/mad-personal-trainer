@@ -16,6 +16,11 @@ import com.mathieu.madtrainer.coach.CoachPrompt
 import com.mathieu.madtrainer.coach.Equipment
 import com.mathieu.madtrainer.coach.SavedPlan
 import com.mathieu.madtrainer.coach.UserProfile
+import com.mathieu.madtrainer.strava.StravaCache
+import com.mathieu.madtrainer.strava.StravaClient
+import com.mathieu.madtrainer.strava.StravaSummary
+import android.content.Intent
+import android.net.Uri
 import com.mathieu.madtrainer.data.Repository
 import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.SessionRecord
@@ -39,6 +44,13 @@ sealed interface CoachState {
     data object Generating : CoachState
     data class Done(val workouts: Int) : CoachState
     data class Error(val message: String) : CoachState
+}
+
+sealed interface StravaState {
+    data object Idle : StravaState
+    data object Working : StravaState
+    data class Ok(val message: String) : StravaState
+    data class Error(val message: String) : StravaState
 }
 
 data class LiveSession(
@@ -85,7 +97,94 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun buildCoachPrompt(): String = CoachPrompt.build(repo.profile.value, repo.sessions.value, equipment())
+    fun buildCoachPrompt(): String {
+        val strava = if (settingsStore.settings.value.includeStrava) StravaSummary.describe(repo.strava.value) else null
+        return CoachPrompt.build(repo.profile.value, repo.sessions.value, equipment(), otherActivities = strava)
+    }
+
+    // ------------------------------------------------------------ Strava
+
+    private val _strava = MutableStateFlow<StravaState>(StravaState.Idle)
+    val stravaState: StateFlow<StravaState> = _strava
+
+    /** Ouvre la page d'autorisation Strava ; le retour arrive dans [handleStravaRedirect]. */
+    fun connectStrava() {
+        val s = settingsStore.settings.value
+        if (s.stravaClientId.isBlank() || s.stravaClientSecret.isBlank()) {
+            _strava.value = StravaState.Error("Renseigne d'abord le Client ID et le Client Secret de ton application Strava")
+            return
+        }
+        val app = getApplication<Application>()
+        app.startActivity(
+            Intent(Intent.ACTION_VIEW, StravaClient.authorizeUri(s.stravaClientId)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    /** Appelé par MainActivity quand Strava redirige vers madtrainer://localhost/strava?code=… */
+    fun handleStravaRedirect(uri: Uri) {
+        if (uri.scheme != "madtrainer" || uri.path?.startsWith("/strava") != true) return
+        uri.getQueryParameter("error")?.let {
+            _strava.value = StravaState.Error("Autorisation Strava refusée")
+            return
+        }
+        val code = uri.getQueryParameter("code") ?: return
+        val scope = uri.getQueryParameter("scope").orEmpty()
+        if (!scope.contains("activity:read")) {
+            _strava.value = StravaState.Error("Coche l'accès aux activités lors de l'autorisation Strava")
+            return
+        }
+        val s = settingsStore.settings.value
+        _strava.value = StravaState.Working
+        viewModelScope.launch {
+            runCatching { StravaClient.exchangeCode(s.stravaClientId, s.stravaClientSecret, code) }
+                .onSuccess { r ->
+                    settingsStore.update {
+                        it.copy(stravaAccess = r.tokens.access_token, stravaRefresh = r.tokens.refresh_token, stravaExpiresAt = r.tokens.expires_at)
+                    }
+                    repo.saveStrava(repo.strava.value.copy(athleteName = r.athleteName))
+                    syncStrava()
+                }
+                .onFailure { _strava.value = StravaState.Error(it.message ?: "Connexion Strava impossible") }
+        }
+    }
+
+    private suspend fun validStravaToken(): String {
+        val s = settingsStore.settings.value
+        if (!s.stravaConnected) error("Strava n'est pas connecté")
+        if (s.stravaAccess.isNotBlank() && s.stravaExpiresAt > System.currentTimeMillis() / 1000 + 120) return s.stravaAccess
+        val t = StravaClient.refresh(s.stravaClientId, s.stravaClientSecret, s.stravaRefresh)
+        settingsStore.update { it.copy(stravaAccess = t.access_token, stravaRefresh = t.refresh_token, stravaExpiresAt = t.expires_at) }
+        return t.access_token
+    }
+
+    /** Récupère les activités des 90 derniers jours et le poids du profil Strava. */
+    fun syncStrava() {
+        _strava.value = StravaState.Working
+        viewModelScope.launch {
+            runCatching {
+                val token = validStravaToken()
+                val after = System.currentTimeMillis() / 1000 - 90L * 24 * 3600
+                val acts = StravaClient.activities(token, after)
+                val weight = runCatching { StravaClient.athleteWeight(token) }.getOrNull()
+                val cache = repo.strava.value.copy(weightKg = weight, lastSync = System.currentTimeMillis(), activities = acts)
+                repo.saveStrava(cache)
+                cache
+            }.onSuccess { c ->
+                _strava.value = StravaState.Ok("${c.activities.size} activités synchronisées")
+            }.onFailure { _strava.value = StravaState.Error(it.message ?: "Synchronisation impossible") }
+        }
+    }
+
+    fun useStravaWeight() {
+        val w = repo.strava.value.weightKg ?: return
+        saveProfile(repo.profile.value.copy(weightKg = w))
+    }
+
+    fun disconnectStrava() {
+        settingsStore.update { it.copy(stravaAccess = "", stravaRefresh = "", stravaExpiresAt = 0) }
+        viewModelScope.launch { repo.saveStrava(StravaCache()) }
+        _strava.value = StravaState.Idle
+    }
 
     /** Importe la réponse de l'IA (collée ou reçue de l'API) : plan + séances dans Programmes. */
     fun importCoachResponse(response: String) {

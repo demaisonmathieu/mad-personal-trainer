@@ -17,7 +17,13 @@ data class Equipment(
 
 object CoachPrompt {
 
-    fun build(profile: UserProfile, sessions: List<SessionRecord>, equipment: Equipment, now: Date = Date()): String {
+    fun build(
+        profile: UserProfile,
+        sessions: List<SessionRecord>,
+        equipment: Equipment,
+        now: Date = Date(),
+        otherActivities: String? = null,
+    ): String {
         val p = profile
         val date = SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE).format(now)
         val maxHr = p.estimatedMaxHr
@@ -74,6 +80,13 @@ object CoachPrompt {
                 }
             }
             appendLine()
+
+            if (!otherActivities.isNullOrBlank()) {
+                appendLine("## Autres activités (Strava)")
+                appendLine(otherActivities.trim())
+                appendLine("Tiens compte de cette charge globale : répartis les séances d'elliptique pour compléter ces activités, sans surcharger les jours qui suivent les séances intenses.")
+                appendLine()
+            }
 
             appendLine("## Ce que j'attends")
             appendLine("1. Une courte analyse de ma situation et de ce qui est réaliste en ${p.horizonWeeks} semaines.")

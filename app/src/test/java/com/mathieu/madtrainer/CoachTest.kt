@@ -63,3 +63,20 @@ class CoachTest {
         assertTrue(CoachParser.parse("Désolé, je ne peux pas.").isFailure)
     }
 }
+
+class StravaSummaryTest {
+    @Test
+    fun summaryGroupsBySportAndFeedsPrompt() {
+        val acts = listOf(
+            com.mathieu.madtrainer.strava.StravaActivity(id = 1, sport_type = "Run", start_date = "2026-11-10T07:00:00Z", start_date_local = "2026-11-10T08:00:00", moving_time = 1800, distance = 5200.0, average_heartrate = 152.0),
+            com.mathieu.madtrainer.strava.StravaActivity(id = 2, sport_type = "Ride", start_date = "2026-11-08T07:00:00Z", start_date_local = "2026-11-08T08:00:00", moving_time = 5400, distance = 42000.0, total_elevation_gain = 380.0),
+        )
+        val txt = com.mathieu.madtrainer.strava.StravaSummary.describe(com.mathieu.madtrainer.strava.StravaCache(activities = acts))!!
+        assertTrue(txt.contains("Course à pied : 1 séances"))
+        assertTrue(txt.contains("Vélo : 1 séances, 1,5 h, 42,0 km"))
+        assertTrue(txt.contains("D+ 380 m"))
+        val prompt = CoachPrompt.build(UserProfile(), emptyList(), Equipment(), otherActivities = txt)
+        assertTrue(prompt.contains("## Autres activités (Strava)"))
+        org.junit.Assert.assertNull(com.mathieu.madtrainer.strava.StravaSummary.describe(com.mathieu.madtrainer.strava.StravaCache()))
+    }
+}

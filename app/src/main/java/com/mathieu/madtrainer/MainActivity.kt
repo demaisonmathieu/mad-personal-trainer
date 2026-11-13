@@ -1,6 +1,8 @@
 package com.mathieu.madtrainer
 
+import android.content.Intent
 import android.os.Bundle
+import androidx.activity.viewModels
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -40,12 +42,21 @@ import com.mathieu.madtrainer.ui.UpdateBanner
 import com.mathieu.madtrainer.ui.WorkoutsScreen
 
 class MainActivity : ComponentActivity() {
+    private val vm: AppViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent?.data?.let { vm.handleStravaRedirect(it) }
         enableEdgeToEdge()
         setContent {
-            MadTheme { AppRoot() }
+            MadTheme { AppRoot(vm) }
         }
+    }
+
+    // Retour de l'autorisation Strava (madtrainer://localhost/strava?code=…)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.data?.let { vm.handleStravaRedirect(it) }
     }
 }
 

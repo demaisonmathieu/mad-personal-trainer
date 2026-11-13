@@ -84,6 +84,18 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     private val gattDump = mutableListOf<String>()
 
     private var gatt: BluetoothGatt? = null
+
+    // --- Protocole Domyos propriétaire (consoles sans FTMS)
+    private var legacyWriteCh: BluetoothGattCharacteristic? = null
+    private var legacyJob: Job? = null
+    private val legacyMutex = Mutex()
+    @Volatile private var legacyAck: CompletableDeferred<Unit>? = null
+    private val legacyAssembler = DomyosLegacy.Assembler()
+    private var legacyErgTarget: Int? = null
+    private var legacyRequestedResistance: Int? = null
+    private var legacyLastStatusAt = 0L
+    private var legacyDistanceM = 0.0
+    private val isLegacy get() = _caps.value.legacyDomyos && legacyWriteCh != null
     private var controlPoint: BluetoothGattCharacteristic? = null
     private var wantConnected = false
     private var targetAddress: String? = null
@@ -150,8 +162,10 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         }
     }
 
-    fun rawToLevel(raw: Int): Double = raw.toDouble() / settingsStore.settings.value.resistanceScale.coerceAtLeast(1)
-    fun levelToRaw(level: Double): Int = (level * settingsStore.settings.value.resistanceScale).roundToInt()
+    // Le protocole Domyos transmet directement le niveau (1..15) : pas d'échelle.
+    private val scale get() = if (_caps.value.legacyDomyos) 1 else settingsStore.settings.value.resistanceScale.coerceAtLeast(1)
+    fun rawToLevel(raw: Int): Double = raw.toDouble() / scale
+    fun levelToRaw(level: Double): Int = (level * scale).roundToInt()
 
     // ---------------------------------------------------------------- scan
 
@@ -235,6 +249,12 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         }
         gatt = null
         controlPoint = null
+        legacyJob?.cancel()
+        legacyJob = null
+        legacyWriteCh = null
+        legacyAck?.complete(Unit)
+        legacyErgTarget = null
+        legacyRequestedResistance = null
         pendingOp?.complete(null)
         pendingOp = null
     }
@@ -372,16 +392,17 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         dumpGatt(g)
         val ftms = g.getService(FtmsUuids.FTMS_SERVICE)
         if (ftms == null) {
-            val legacy = g.getService(FtmsUuids.DOMYOS_LEGACY_SERVICE) != null
-            _caps.value = Capabilities(hasFtms = false, legacyDomyos = legacy)
-            _state.value = ConnState.CONNECTED
-            log(
-                if (legacy) "Console Domyos ancienne génération (protocole propriétaire, pas de FTMS) : non pris en charge pour l'instant."
-                else "Cet appareil n'expose pas le service FTMS.",
-            )
-            g.services.forEach { log("Service ${it.uuid}") }
-            // Abonnement à tout ce qui notifie, pour capturer le protocole dans le journal
-            g.services.flatMap { it.characteristics }.forEach { subscribe(it) }
+            val legacySvc = g.getService(DomyosLegacy.SERVICE)
+            val writeCh = legacySvc?.getCharacteristic(DomyosLegacy.WRITE)
+            val notifyCh = legacySvc?.getCharacteristic(DomyosLegacy.NOTIFY)
+            if (writeCh != null && notifyCh != null) {
+                setupLegacy(writeCh, notifyCh)
+            } else {
+                _caps.value = Capabilities(hasFtms = false)
+                _state.value = ConnState.CONNECTED
+                log("Cet appareil n'expose ni FTMS ni le protocole Domyos.")
+                g.services.flatMap { it.characteristics }.forEach { subscribe(it) }
+            }
             return
         }
 
@@ -433,9 +454,96 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         if (controlPoint != null) requestControl() else log("Pas de point de contrôle : lecture seule")
     }
 
+    // ---------------------------------------------------------------- Domyos propriétaire
+
+    private suspend fun setupLegacy(writeCh: BluetoothGattCharacteristic, notifyCh: BluetoothGattCharacteristic) {
+        legacyWriteCh = writeCh
+        legacyDistanceM = 0.0
+        legacyLastStatusAt = 0L
+        _caps.value = Capabilities(
+            hasFtms = false,
+            legacyDomyos = true,
+            machineType = "Domyos (protocole propriétaire)",
+            canResistance = true,
+            canPower = true, // ERG simulé en ajustant la résistance
+            resistanceRange = FtmsParser.Range(DomyosLegacy.MIN_RESISTANCE, DomyosLegacy.MAX_RESISTANCE, 1),
+            controlGranted = true,
+        )
+        if (!subscribe(notifyCh)) log("Abonnement aux notifications Domyos échoué")
+        log("Console Domyos (protocole propriétaire) : initialisation…")
+        legacySend(DomyosLegacy.initSequence(start = false))
+        _state.value = ConnState.CONNECTED
+        log("Prêt : ${_caps.value.machineType}")
+        startLegacyLoop()
+    }
+
+    /** Envoie des trames dans l'ordre ; attend la réponse de la console (max 300 ms) si demandé. */
+    private suspend fun legacySend(frames: List<DomyosLegacy.Frame>, quiet: Boolean = false) = legacyMutex.withLock {
+        val ch = legacyWriteCh ?: return@withLock
+        for (f in frames) {
+            val ack = if (f.waitResponse) CompletableDeferred<Unit>().also { legacyAck = it } else null
+            if (!quiet) raw("TX", ch.uuid, f.bytes)
+            if (!write(ch, f.bytes)) {
+                if (!quiet) log("Écriture refusée : ${f.bytes.toHex()}")
+            }
+            if (ack != null) withTimeoutOrNull(300) { ack.await() }
+            legacyAck = null
+        }
+    }
+
+    /** Boucle de maintien : la console n'envoie ses données qu'en réponse aux trames "noOp" (toutes les 300 ms). */
+    private fun startLegacyLoop() {
+        legacyJob?.cancel()
+        legacyJob = scope.launch {
+            var tick = 0
+            while (true) {
+                legacySend(listOf(DomyosLegacy.Frame(DomyosLegacy.NOOP, true)), quiet = true)
+                tick++
+                // ERG simulé : toutes les ~1,2 s, ajuste la résistance pour viser la puissance cible
+                val target = legacyErgTarget
+                val cad = _metrics.value.cadence?.toInt() ?: 0
+                if (target != null && tick % 4 == 0 && cad > 0) {
+                    val r = DomyosLegacy.resistanceForPower(target, cad)
+                    if (r != legacyRequestedResistance) applyLegacyResistance(r, fromErg = true)
+                }
+                delay(300)
+            }
+        }
+    }
+
+    private suspend fun applyLegacyResistance(level: Int, fromErg: Boolean = false) {
+        val l = level.coerceIn(DomyosLegacy.MIN_RESISTANCE, DomyosLegacy.MAX_RESISTANCE)
+        legacyRequestedResistance = l
+        if (!fromErg) log("Résistance cible : $l")
+        legacySend(DomyosLegacy.resistanceFrames(l))
+    }
+
+    private fun onLegacyNotify(value: ByteArray) {
+        if (value.size != 20) legacyAck?.complete(Unit)
+        val packet = legacyAssembler.push(value) ?: return
+        val st = DomyosLegacy.parseStatus(packet) ?: return
+        val now = System.currentTimeMillis()
+        if (legacyLastStatusAt > 0) {
+            val dt = (now - legacyLastStatusAt).coerceIn(0, 2000) / 1000.0
+            legacyDistanceM += st.speedKmh / 3.6 * dt
+        }
+        legacyLastStatusAt = now
+        val power = DomyosLegacy.estimatePower(st.resistance, st.cadence, st.speedKmh)
+        _metrics.value = _metrics.value.copy(
+            speedKmh = st.speedKmh,
+            cadence = st.cadence.toDouble(),
+            resistanceRaw = st.resistance,
+            powerW = power,
+            totalKcal = st.kcal,
+            heartRate = st.heartRate,
+            distanceM = legacyDistanceM.toInt(),
+        )
+    }
+
     private fun onNotify(uuid: UUID, value: ByteArray) {
         raw("RX", uuid, value)
         when (uuid) {
+            DomyosLegacy.NOTIFY -> onLegacyNotify(value)
             FtmsUuids.CROSS_TRAINER_DATA ->
                 _metrics.value = _metrics.value.merge(FtmsParser.parseCrossTrainerData(value))
             FtmsUuids.INDOOR_BIKE_DATA ->
@@ -483,24 +591,45 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
         }
     }
 
-    fun requestControl() = scope.launch { sendControl(FtmsControl.requestControl()) }
+    fun requestControl() = scope.launch {
+        if (isLegacy) return@launch
+        sendControl(FtmsControl.requestControl())
+    }
 
     fun startMachine() = scope.launch {
+        if (isLegacy) {
+            legacySend(DomyosLegacy.initSequence(start = true))
+            return@launch
+        }
         ensureControl()
         sendControl(FtmsControl.start())
     }
 
     fun pauseMachine() = scope.launch {
+        if (isLegacy) {
+            legacyErgTarget = null
+            return@launch // la console Domyos se met en pause d'elle-même quand on arrête de pédaler
+        }
         ensureControl()
         sendControl(FtmsControl.pause())
     }
 
     fun stopMachine() = scope.launch {
+        if (isLegacy) {
+            legacyErgTarget = null
+            legacySend(listOf(DomyosLegacy.Frame(DomyosLegacy.STOP, true)))
+            return@launch
+        }
         ensureControl()
         sendControl(FtmsControl.stop())
     }
 
     fun setResistanceLevel(level: Double) = scope.launch {
+        if (isLegacy) {
+            legacyErgTarget = null
+            applyLegacyResistance(level.roundToInt())
+            return@launch
+        }
         ensureControl()
         var raw = levelToRaw(level)
         _caps.value.resistanceRange?.let { r -> if (r.max > r.min) raw = raw.coerceIn(r.min, r.max) }
@@ -509,6 +638,13 @@ class BikeManager(private val context: Context, private val settingsStore: Setti
     }
 
     fun setTargetPower(watts: Int) = scope.launch {
+        if (isLegacy) {
+            legacyErgTarget = watts.coerceIn(10, 1000)
+            log("Puissance cible (ERG simulé) : $watts W")
+            val cad = _metrics.value.cadence?.toInt() ?: 0
+            if (cad > 0) applyLegacyResistance(DomyosLegacy.resistanceForPower(watts, cad), fromErg = true)
+            return@launch
+        }
         ensureControl()
         var w = watts
         _caps.value.powerRange?.let { r -> if (r.max > r.min) w = w.coerceIn(r.min, r.max) }

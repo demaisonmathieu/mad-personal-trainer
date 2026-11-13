@@ -122,7 +122,7 @@ fun DeviceScreen(vm: AppViewModel) {
                                     when {
                                         caps.hasFtms -> caps.machineType +
                                             if (caps.controlGranted) " · contrôle actif" else " · lecture seule"
-                                        caps.legacyDomyos -> "Protocole Domyos propriétaire (non pris en charge)"
+                                        caps.legacyDomyos -> "Domyos (protocole propriétaire) · contrôle actif"
                                         else -> "Pas de service FTMS"
                                     },
                                     style = MaterialTheme.typography.bodySmall,

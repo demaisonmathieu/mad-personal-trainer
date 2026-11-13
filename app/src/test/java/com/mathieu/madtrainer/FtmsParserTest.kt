@@ -109,3 +109,62 @@ class FtmsParserTest {
         assertTrue(WorkoutEngine.position(w, 30).finished)
     }
 }
+
+class DomyosLegacyTest {
+    private fun bytes(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }
+
+    @Test
+    fun resistanceFrameChecksum() {
+        val frames = com.mathieu.madtrainer.ble.DomyosLegacy.resistanceFrames(5)
+        assertEquals(2, frames.size)
+        assertEquals(20, frames[0].bytes.size)
+        assertEquals(3, frames[1].bytes.size)
+        val all = frames[0].bytes + frames[1].bytes
+        assertEquals(5, all[10].toInt())
+        var sum = 0
+        for (i in 0 until 22) sum += all[i].toInt() and 0xFF
+        assertEquals(sum and 0xFF, all[22].toInt() and 0xFF)
+        // bornage 1..15
+        assertEquals(15, com.mathieu.madtrainer.ble.DomyosLegacy.resistanceFrames(40)[0].bytes[10].toInt())
+    }
+
+    @Test
+    fun initSequence() {
+        val d = com.mathieu.madtrainer.ble.DomyosLegacy
+        assertEquals(14, d.initSequence(false).size)
+        assertEquals(15, d.initSequence(true).size)
+        assertArrayEquals(bytes(0xf0, 0xc8, 0x01, 0xb9), d.initSequence(false)[0].bytes)
+    }
+
+    @Test
+    fun statusParsingAndAssembly() {
+        val d = com.mathieu.madtrainer.ble.DomyosLegacy
+        val p = ByteArray(26)
+        p[0] = 0xF0.toByte(); p[1] = 0xBC.toByte()
+        p[6] = 0x00; p[7] = 0x7D        // 12.5 km/h
+        p[9] = 55                       // cadence
+        p[10] = 0x01; p[11] = 0x2C      // 300 kcal
+        p[14] = 7                       // résistance
+        p[18] = 0                       // pas de cardio
+        val a = com.mathieu.madtrainer.ble.DomyosLegacy.Assembler()
+        assertNull(a.push(p.copyOfRange(0, 20)))
+        val full = a.push(p.copyOfRange(20, 26))!!
+        val st = d.parseStatus(full)!!
+        assertEquals(12.5, st.speedKmh, 0.001)
+        assertEquals(55, st.cadence)
+        assertEquals(300, st.kcal)
+        assertEquals(7, st.resistance)
+        assertNull(st.heartRate)
+        // trame entière d'un coup
+        assertEquals(26, a.push(p)!!.size)
+    }
+
+    @Test
+    fun ergSimulationIsConsistent() {
+        val d = com.mathieu.madtrainer.ble.DomyosLegacy
+        val r = d.resistanceForPower(150, 60)
+        val w = d.estimatePower(r, 60, 10.0)
+        assertTrue("r=$r w=$w", kotlin.math.abs(w - 150) < 20)
+        assertEquals(0, d.estimatePower(5, 0, 0.0))
+    }
+}

@@ -41,7 +41,18 @@ Onglet **Vélo**, puis **Envoyer** à côté de « Journal Bluetooth », puis ch
 - Si le journal indique *« paramètre invalide »*, active **Résistance sur 2 octets** dans les réglages.
 - Si le niveau affiché est 10× trop grand ou trop petit, change l'**échelle** (×1 ou ×10).
 - Si la console répond *« non supporté »* pour la puissance, c'est que le mode ERG n'est pas géré par ta console : utilise les séances en résistance.
-- Si le journal indique *« protocole Domyos propriétaire »*, ta console est d'une ancienne génération, sans FTMS. Ce protocole n'est pas encore implémenté. Envoie le journal Bluetooth sur Drive pour qu'on l'ajoute.
+
+### Consoles Domyos sans FTMS (ex. `Domyos-EL-xxxx`)
+
+L'app détecte le protocole Domyos propriétaire (service `49535343-fe7d-…`) et le gère :
+
+- initialisation de la console et maintien de la connexion toutes les 300 ms ;
+- lecture de la vitesse, de la cadence, de la résistance, des calories et du cardio ;
+- résistance de 1 à 15 ;
+- **puissance estimée**, car la console ne la transmet pas. Elle est calculée à partir de la résistance et de la cadence ;
+- **mode ERG simulé** : l'app ajuste la résistance en continu pour viser la puissance cible.
+
+Les trames du protocole sont documentées d'après le projet open source [qdomyos-zwift](https://github.com/cagnulein/qdomyos-zwift).
 
 ## Architecture
 

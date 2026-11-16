@@ -86,58 +86,62 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
             Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { SectionTitle("Mes programmes — ${sport.label}", Modifier.padding(top = 8.dp)) }
+            item { ScreenHeader("Mes programmes", eyebrow = "${sport.label} · ${workouts.size} séance(s)") }
             items(workouts, key = { it.id }) { w ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(w.name, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "${formatDuration(w.totalSec)} · ${w.steps.size} étapes" +
-                                        (if (w.totalDistanceM > 0) " · ${"%.1f".format(w.totalDistanceM / 1000.0)} km en distance" else "") +
-                                        (w.planWeek?.let { " · coach S$it" } ?: ""),
-                                    style = MaterialTheme.typography.bodySmall,
+                NightCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SportBadge(w.sport)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(w.name, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                            Text(
+                                "${w.steps.size} étapes" +
+                                    (if (w.totalDistanceM > 0) " · ${"%.1f".format(w.totalDistanceM / 1000.0)} km" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Night.Muted,
+                            )
+                        }
+                        Text(formatDuration(w.totalSec), fontFamily = Display, fontWeight = FontWeight.Bold, style = NumberStyle, modifier = Modifier.padding(end = 10.dp))
+                        PlayButton(onClick = {
+                            vm.launchWorkout(w)
+                            onStart()
+                        })
+                    }
+                    WorkoutProfile(w, Modifier.fillMaxWidth().height(32.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        w.planWeek?.let { Pill("Plan · semaine $it") }
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { editing = w }) { Icon(Icons.Filled.Edit, "Modifier", tint = Night.Muted) }
+                        Box {
+                            var menu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Plus", tint = Night.Muted) }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(if (w.sport == Sport.RUNNING) "Faire sur l'elliptique" else "Faire en course") },
+                                    leadingIcon = { Icon(Icons.Filled.SwapHoriz, null) },
+                                    onClick = {
+                                        menu = false
+                                        vm.runOnOtherSport(w)
+                                        onStart()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Dupliquer") },
+                                    leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
+                                    onClick = {
+                                        menu = false
+                                        vm.saveWorkout(w.copy(id = UUID.randomUUID().toString(), name = w.name + " (copie)"))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Supprimer") },
+                                    leadingIcon = { Icon(Icons.Filled.Delete, null) },
+                                    onClick = {
+                                        menu = false
+                                        vm.deleteWorkout(w.id)
+                                    },
                                 )
                             }
-                            IconButton(onClick = {
-                                vm.launchWorkout(w)
-                                onStart()
-                            }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
-                            IconButton(onClick = { editing = w }) { Icon(Icons.Filled.Edit, "Modifier") }
-                            Box {
-                                var menu by remember { mutableStateOf(false) }
-                                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Plus") }
-                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(if (w.sport == Sport.RUNNING) "Faire sur l'elliptique" else "Faire en course") },
-                                        leadingIcon = { Icon(Icons.Filled.SwapHoriz, null) },
-                                        onClick = {
-                                            menu = false
-                                            vm.runOnOtherSport(w)
-                                            onStart()
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Dupliquer") },
-                                        leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
-                                        onClick = {
-                                            menu = false
-                                            vm.saveWorkout(w.copy(id = UUID.randomUUID().toString(), name = w.name + " (copie)"))
-                                        },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Supprimer") },
-                                        leadingIcon = { Icon(Icons.Filled.Delete, null) },
-                                        onClick = {
-                                            menu = false
-                                            vm.deleteWorkout(w.id)
-                                        },
-                                    )
-                                }
-                            }
                         }
-                        WorkoutProfile(w, Modifier.fillMaxWidth().height(40.dp).padding(top = 6.dp))
                     }
                 }
             }
@@ -165,7 +169,9 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
                 }
             },
             icon = { Icon(Icons.Filled.Add, null) },
-            text = { Text("Nouveau") },
+            text = { Text("Nouveau", fontWeight = FontWeight.SemiBold) },
+            containerColor = Night.Accent,
+            contentColor = Night.Bg,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
     }

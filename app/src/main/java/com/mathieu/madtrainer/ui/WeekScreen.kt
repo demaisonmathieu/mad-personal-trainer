@@ -48,6 +48,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -161,7 +165,7 @@ fun WeekScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState(), enabled = drag.draggedKey == null).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Ma semaine", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (ref == null) ScreenHeader("Ma semaine", eyebrow = "Plan")
 
         if (ref == null) {
             Card(Modifier.fillMaxWidth()) {
@@ -177,13 +181,9 @@ fun WeekScreen(
             val end = start + WeekPlanner.WEEK_MS
             val df = SimpleDateFormat("d MMM", Locale.FRANCE)
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            ScreenHeader("Semaine $week / $maxWeek", eyebrow = "du ${df.format(Date(start))} au ${df.format(Date(end - 1))}") {
                 IconButton(onClick = { week = (week - 1).coerceAtLeast(1) }, enabled = week > 1) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Semaine précédente")
-                }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Semaine $week / $maxWeek", fontWeight = FontWeight.SemiBold)
-                    Text("du ${df.format(Date(start))} au ${df.format(Date(end - 1))}", style = MaterialTheme.typography.bodySmall)
                 }
                 IconButton(onClick = { week = (week + 1).coerceAtMost(maxWeek) }, enabled = week < maxWeek) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Semaine suivante")
@@ -281,19 +281,21 @@ fun WeekScreen(
                             },
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (highlight) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
+                        // En-tête du jour (surligné pendant un glisser-déposer)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (highlight) Night.AccentContainer else androidx.compose.ui.graphics.Color.Transparent)
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                (if (d >= 0) WeekPlanner.DAYS[d] + " " + df.format(Date(dayDate!!)) else "À placer dans la semaine") +
-                                    (if (isToday) " · aujourd'hui" else "") + (if (highlight) "  ← déposer ici" else ""),
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            Eyebrow(
+                                if (d >= 0) WeekPlanner.DAYS[d] + " " + df.format(Date(dayDate!!)) else "À placer dans la semaine",
+                                if (isToday || highlight) Night.AccentText else Night.Muted,
+                                Modifier.weight(1f),
                             )
+                            if (isToday) Pill("Aujourd'hui", Night.AccentText, Night.AccentContainer)
+                            if (highlight) Text("déposer ici", style = MaterialTheme.typography.labelMedium, color = Night.AccentText)
                         }
                         if (dayItems.isEmpty()) {
                             Text(
@@ -424,16 +426,28 @@ private fun WeekCard(
                 )
             }
             .clickable { onEdit() },
+        colors = CardDefaults.cardColors(containerColor = if (done) Color(0xFF111A16) else Night.Surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (done) Color(0xFF1F3A2E) else Night.Line),
     ) {
-        Row(Modifier.padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = done, onCheckedChange = onToggleDone, enabled = !item.autoDone)
-            Icon(item.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                Text(item.title, textDecoration = if (done) TextDecoration.LineThrough else null)
-                Text(item.subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+        Row(Modifier.padding(start = 2.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = done,
+                onCheckedChange = onToggleDone,
+                enabled = !item.autoDone,
+                colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = Night.Good, checkmarkColor = Night.Bg, disabledCheckedColor = Night.Good.copy(alpha = 0.7f)),
+            )
+            SportBadge(item.sport)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    textDecoration = if (done) TextDecoration.LineThrough else null,
+                    color = if (done) Night.Muted else Night.Text,
+                )
+                Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = Night.Muted, maxLines = 2)
+                item.workout?.let { WorkoutProfile(it, Modifier.fillMaxWidth().height(14.dp).padding(top = 4.dp)) }
             }
-            IconButton(onClick = onPlay) { Icon(Icons.Filled.PlayArrow, "Lancer") }
+            if (!done) PlayButton(onClick = onPlay, size = 40)
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Plus") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

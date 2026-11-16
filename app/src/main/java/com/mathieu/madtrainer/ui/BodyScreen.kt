@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
@@ -104,8 +105,10 @@ fun BodyScreen(vm: AppViewModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SectionTitle("Corps", Modifier.weight(1f))
+            ScreenHeader(
+                "Corps",
+                eyebrow = last?.let { "Pesée du ${weighFmt.format(Date(it.time))}" } ?: "Balance et montre",
+            ) {
                 if (ui.syncing) {
                     CircularProgressIndicator(Modifier.padding(end = 12.dp).width(20.dp).height(20.dp), strokeWidth = 2.dp)
                 } else {
@@ -116,9 +119,12 @@ fun BodyScreen(vm: AppViewModel) {
 
         // Liaison Health Connect
         item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Health Connect", fontWeight = FontWeight.SemiBold)
+            NightCard {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Eyebrow("Health Connect", modifier = Modifier.weight(1f))
+                        if (ui.connected) Pill("Connecté", Night.Good, Color(0xFF13241C))
+                    }
                     when {
                         ui.availability == null -> Text("Vérification…", style = MaterialTheme.typography.bodySmall)
                         ui.availability != HealthAvailability.AVAILABLE -> {
@@ -181,31 +187,42 @@ fun BodyScreen(vm: AppViewModel) {
             item { HydrationCard() }
             item { NutritionCard(nutrition) }
         } else {
-            // Dernière pesée
+            // Dernière pesée : poids en grand, tendance sur 30 jours, composition en dessous
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Dernière pesée : ${weighFmt.format(Date(last.time))} · ${sourceLabel(last.source)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    val heightM = profile.heightCm / 100.0
-                    val tiles = buildList {
-                        add(Tile("Poids", fmt(last.weightKg!!), "kg", Icons.Filled.MonitorWeight, Color(0xFF4FC3F7)))
-                        last.bodyFatPct?.let { add(Tile("Masse grasse", fmt(it), "%", Icons.Filled.Accessibility, Color(0xFFFFB74D))) }
-                        last.leanMassKg?.let { add(Tile("Masse maigre", fmt(it), "kg", Icons.Filled.FitnessCenter, Color(0xFF81C784))) }
-                        last.waterPct?.let { add(Tile("Eau", fmt(it), "%", Icons.Filled.WaterDrop, Color(0xFF64B5F6))) }
-                        last.boneMassKg?.let { add(Tile("Masse osseuse", fmt(it), "kg", Icons.Filled.Straighten, Color(0xFFBDBDBD))) }
-                        last.bmrKcal?.let { add(Tile("Métabolisme", "$it", "kcal/j", Icons.Filled.LocalFireDepartment, Color(0xFFE57373))) }
-                        if (heightM > 0) add(Tile("IMC", fmt(last.weightKg!! / (heightM * heightM)), "", Icons.Filled.Straighten, Color(0xFFBA68C8)))
-                        restingHr?.let { add(Tile("FC de repos", "$it", "bpm", Icons.Filled.Favorite, Color(0xFFF06292))) }
-                    }
-                    tiles.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            row.forEach { t -> MetricTile(t.label, t.value, t.unit, t.icon, t.color, Modifier.weight(1f)) }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                val trend30 = BodyStats.trend(cache.measures, 30, now) { it.weightKg }
+                val heightM = profile.heightCm / 100.0
+                NightCard {
+                    Eyebrow("Poids · ${sourceLabel(last.source)}")
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(fmt(last.weightKg!!), fontFamily = Display, fontSize = 56.sp, fontWeight = FontWeight.Bold, style = NumberStyle)
+                        Text(" kg", color = Night.Muted, modifier = Modifier.padding(bottom = 10.dp).weight(1f))
+                        trend30?.let {
+                            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(bottom = 8.dp)) {
+                                Text("${signed(it.delta)} kg", fontFamily = Display, fontWeight = FontWeight.Bold, color = if (it.delta <= 0) Night.Good else Color(0xFFFFB020))
+                                Text("sur ${it.days} j · ${signed(it.perWeek)} kg/sem.", style = MaterialTheme.typography.labelSmall, color = Night.Muted)
+                            }
                         }
                     }
+                    profile.targetWeightKg?.let { target ->
+                        val left = last.weightKg!! - target
+                        Text(
+                            if (left > 0) "Encore ${fmt(left)} kg avant l'objectif de ${fmt(target)} kg" else "Objectif de ${fmt(target)} kg atteint",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Night.Soft,
+                        )
+                    }
+                    androidx.compose.material3.HorizontalDivider(color = Night.Line)
+                    SummaryGrid(
+                        buildList {
+                            last.bodyFatPct?.let { add("Masse grasse" to "${fmt(it)} %") }
+                            last.leanMassKg?.let { add("Masse maigre" to "${fmt(it)} kg") }
+                            last.waterPct?.let { add("Eau" to "${fmt(it)} %") }
+                            last.boneMassKg?.let { add("Os" to "${fmt(it)} kg") }
+                            last.bmrKcal?.let { add("Métabolisme" to "$it kcal") }
+                            if (heightM > 0) add("IMC" to fmt(last.weightKg!! / (heightM * heightM)))
+                            restingHr?.let { add("FC repos" to "$it bpm") }
+                        },
+                    )
                 }
             }
 
@@ -224,20 +241,20 @@ fun BodyScreen(vm: AppViewModel) {
             }
 
             item {
-                TrendCard("Poids", "kg", cache.measures, period, now, Color(0xFF4FC3F7)) { it.weightKg }
+                TrendCard("Poids", "kg", cache.measures, period, now, Night.Water) { it.weightKg }
             }
             if (cache.measures.any { it.bodyFatPct != null }) {
-                item { TrendCard("Masse grasse", "point(s)", cache.measures, period, now, Color(0xFFFFB74D)) { it.bodyFatPct } }
+                item { TrendCard("Masse grasse", "point(s)", cache.measures, period, now, Color(0xFFFFB020)) { it.bodyFatPct } }
             }
             if (cache.measures.any { it.leanMassKg != null }) {
-                item { TrendCard("Masse maigre", "kg", cache.measures, period, now, Color(0xFF81C784)) { it.leanMassKg } }
+                item { TrendCard("Masse maigre", "kg", cache.measures, period, now, Night.Good) { it.leanMassKg } }
             }
 
             item { HydrationCard() }
             item { NutritionCard(nutrition) }
 
             // Historique des pesées
-            item { SectionTitle("Pesées") }
+            item { Eyebrow("Pesées récentes", modifier = Modifier.padding(top = 8.dp)) }
             items(cache.measures.filter { it.weightKg != null }.sortedByDescending { it.time }.take(30)) { m ->
                 Column {
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -254,9 +271,9 @@ fun BodyScreen(vm: AppViewModel) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text("${fmt(m.weightKg!!)} kg", fontWeight = FontWeight.Bold)
+                        Text("${fmt(m.weightKg!!)} kg", fontFamily = Display, fontWeight = FontWeight.Bold, style = NumberStyle)
                     }
-                    HorizontalDivider()
+                    HorizontalDivider(color = Night.Line)
                 }
             }
         }
@@ -264,7 +281,6 @@ fun BodyScreen(vm: AppViewModel) {
     }
 }
 
-private data class Tile(val label: String, val value: String, val unit: String, val icon: ImageVector, val color: Color)
 
 @Composable
 private fun TrendCard(
@@ -278,10 +294,10 @@ private fun TrendCard(
 ) {
     val series = BodyStats.dailySeries(measures, days, now, value)
     val trend = BodyStats.trend(measures, days, now, value)
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
+    NightCard {
+        Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.labelLarge, color = color, modifier = Modifier.weight(1f))
+                Text(title, style = MaterialTheme.typography.titleSmall, color = color, modifier = Modifier.weight(1f))
                 Text(
                     trend?.let {
                         "${signed(it.delta)} $deltaUnit" + if (deltaUnit == "kg") " (${signed(it.perWeek)} kg/sem.)" else ""

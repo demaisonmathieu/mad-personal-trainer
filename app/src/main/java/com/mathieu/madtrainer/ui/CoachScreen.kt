@@ -8,6 +8,8 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -71,7 +73,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
@@ -93,7 +95,7 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Mon coach", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        ScreenHeader("Mon coach", eyebrow = "Plan d'entraînement et renfo")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(!showStrength, { showStrength = false }, label = { Text("Plan cardio commun") })
             FilterChip(showStrength, { showStrength = true }, label = { Text("Renfo & douleurs") })
@@ -109,69 +111,66 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
                 editingProfile = false
             }, onCancel = { editingProfile = false })
         } else {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Profil", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { editingProfile = true }) { Text("Modifier") }
-                    }
-                    Text(
-                        "${profile.age} ans · ${fmtNum(profile.weightKg)} kg · ${profile.heightCm} cm · IMC ${"%.1f".format(profile.bmi)}",
-                    )
-                    Text("${profile.goal.label} · ${profile.level.label}")
-                    Text(
-                        "${profile.sessionsPerWeek} séances/sem. de ${profile.sessionMinutes} min, sur ${profile.horizonWeeks} semaines",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    val zones = profile.hrZones
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "Zones cardio " + if (zones.custom) "(${profile.hrZonesSource ?: "personnalisées"})" else "(${zones.max} bpm max, calculées)",
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                            Text(zones.describe(), style = MaterialTheme.typography.bodySmall)
-                        }
-                        if (zones.custom) TextButton(onClick = { vm.resetHrZones() }) { Text("Réinitialiser") }
-                    }
+            NightCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Eyebrow("Profil", modifier = Modifier.weight(1f))
+                    TextButton(onClick = { editingProfile = true }) { Text("Modifier") }
                 }
+                SummaryGrid(
+                    listOf(
+                        "Âge" to "${profile.age} ans",
+                        "Poids" to "${fmtNum(profile.weightKg)} kg",
+                        "IMC" to "%.1f".format(profile.bmi),
+                    ),
+                )
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Pill(profile.goal.label, Night.AccentText, Night.AccentContainer)
+                    Pill(profile.level.label)
+                    Pill("${profile.sessionsPerWeek} × ${profile.sessionMinutes} min / sem.")
+                    Pill("${profile.horizonWeeks} semaines")
+                    profile.vmaKmh?.let { Pill("VMA ${fmtNum(it)} km/h") }
+                }
+                val zones = profile.hrZones
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Zones cardio · " + if (zones.custom) (profile.hrZonesSource ?: "personnalisées") else "FC max ${zones.max} bpm",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Night.Muted,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (zones.custom) TextButton(onClick = { vm.resetHrZones() }) { Text("Réinitialiser") }
+                }
+                ZoneStrip(zones)
             }
         }
 
         StravaCard(vm)
 
         // ---------------------------------------------------------------- génération
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Générer mon programme (course + elliptique)",
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Le prompt contient ton profil, tes dernières séances et les capacités de ta machine. " +
-                        "La réponse de l'IA crée automatiquement les séances dans Programmes.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Button(
-                    onClick = { vm.generateWithApi() },
-                    enabled = settings.anthropicKey.isNotBlank() && coach != CoachState.Generating,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.AutoAwesome, null)
-                    Text(if (settings.anthropicKey.isBlank()) "  Générer avec Claude (clé API requise)" else "  Générer avec Claude")
-                }
-                // Plan par règles d'entraînement : instantané, sans clé API
-                OutlinedButton(
-                    onClick = { if (globalPlan != null) confirmRulePlan = true else vm.generateRulePlan() },
-                    enabled = coach != CoachState.Generating,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Calculate, null, Modifier.size(18.dp))
-                    Text("  Générer sans IA (profil, perfs, zones, poids)")
-                }
+        NightCard(highlight = true) {
+            Eyebrow("Générer mon programme", Night.AccentText)
+            Text("Course + elliptique, calé sur ton profil, tes séances, tes zones et ton poids.", style = MaterialTheme.typography.bodyMedium, color = Night.Soft)
+            // Plan par règles d'entraînement : instantané, sans clé API
+            Button(
+                onClick = { if (globalPlan != null) confirmRulePlan = true else vm.generateRulePlan() },
+                enabled = coach != CoachState.Generating,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Icon(Icons.Filled.Calculate, null, Modifier.size(18.dp))
+                Text("  Générer sans IA", fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(
+                onClick = { vm.generateWithApi() },
+                enabled = settings.anthropicKey.isNotBlank() && coach != CoachState.Generating,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
+                Text(if (settings.anthropicKey.isBlank()) "  Avec Claude (clé API requise)" else "  Générer avec Claude")
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (confirmRulePlan) {
                     AlertDialog(
                         onDismissRequest = { confirmRulePlan = false },
@@ -245,9 +244,9 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
         }
 
         // ---------------------------------------------------------------- import manuel
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Importer une réponse", fontWeight = FontWeight.SemiBold)
+        NightCard {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Eyebrow("Importer une réponse d'IA")
                 Text(
                     "Après avoir collé le prompt dans Claude (ou une autre IA), copie toute sa réponse et colle-la ici.",
                     style = MaterialTheme.typography.bodySmall,
@@ -283,9 +282,10 @@ private fun PlanView(saved: SavedPlan, vm: AppViewModel, onStartWorkout: () -> U
     val p = saved.plan
     val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
     val planWorkouts = workouts.filter { it.id in saved.workoutIds }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(p.plan_name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    NightCard {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Eyebrow("Plan en cours", Night.AccentText)
+            Text(p.plan_name, style = MaterialTheme.typography.titleLarge)
             Text(
                 "Créé le " + SimpleDateFormat("d MMMM yyyy", Locale.FRANCE).format(Date(saved.createdAt)),
                 style = MaterialTheme.typography.bodySmall,
@@ -304,26 +304,27 @@ private fun PlanView(saved: SavedPlan, vm: AppViewModel, onStartWorkout: () -> U
             }
             if (p.warnings.isNotEmpty()) {
                 SectionTitle("Signaux d'alerte")
-                p.warnings.forEach { Text("• $it", color = MaterialTheme.colorScheme.error) }
+                p.warnings.forEach { Text("• $it", color = Night.Bad) }
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle("Séances du programme")
             planWorkouts.groupBy { it.planWeek ?: 0 }.toSortedMap().forEach { (week, list) ->
-                Text(if (week > 0) "Semaine $week" else "Séances", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Eyebrow(if (week > 0) "Semaine $week" else "Séances", Night.AccentText, Modifier.padding(top = 6.dp))
                 list.forEach { w ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f)) {
-                            Text(w.name)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        SportBadge(w.sport)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(w.name, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 listOfNotNull(w.planDay?.takeIf { it.isNotBlank() }, formatDuration(w.totalSec), w.notes.takeIf { it.isNotBlank() })
                                     .joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        IconButton(onClick = {
+                        PlayButton(onClick = {
                             vm.launchWorkout(w)
                             onStartWorkout()
-                        }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
+                        }, size = 44)
                     }
                 }
             }
@@ -553,6 +554,24 @@ private fun StravaCard(vm: AppViewModel) {
                 is StravaState.Ok -> Text(st.message, style = MaterialTheme.typography.bodySmall)
                 is StravaState.Error -> Text(st.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 StravaState.Idle -> Unit
+            }
+        }
+    }
+}
+
+/** Les 5 zones cardio en couleur, avec leur borne basse. */
+@Composable
+fun ZoneStrip(zones: com.mathieu.madtrainer.data.HrZones) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        (1..5).forEach { z ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxWidth().height(8.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                        .background(zoneColor(z)),
+                )
+                Text("Z$z", style = MaterialTheme.typography.labelSmall, color = Night.Soft, modifier = Modifier.padding(top = 4.dp))
+                Text("${zones.range(z).first}+", style = MaterialTheme.typography.labelSmall, color = Night.Muted)
             }
         }
     }

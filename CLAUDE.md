@@ -30,5 +30,5 @@ Service `49535343-fe7d-…`, écriture `…8841…`, notif `…1e4d…`. Séquen
 FtmsParserTest (+ DomyosLegacy), CoachTest (+ Strava, parseurs), RunEngineTest, StrengthTest, ConverterTest, WeekPlannerTest, HrZonesTest, ReportVoiceTest, coach/JsonRepairTest, coach/ExerciseCatalogTest.
 
 ## État au 16/11/2026
-Dernières fonctions ajoutées, **pas encore validées par une compilation complète** (vérifier la CI en premier) : glisser-déposer « Ma semaine », images/vidéos renfo, zones cardio Strava, coach vocal (préavis 30 s, alerte cardio trop élevé, annonces sur l'elliptique), rapport de progression avec analyse IA.
+Dernières fonctions ajoutées, **compilées et testées en CI (release v1.0.24), pas encore essayées sur l'appareil** : glisser-déposer « Ma semaine », images/vidéos renfo, zones cardio Strava, coach vocal (préavis 30 s, alerte cardio trop élevé, annonces sur l'elliptique), rapport de progression avec analyse IA.
 Problème ouvert : la montre Amazfit Balance n'est pas toujours découverte (il faut activer la diffusion du cardio sur la montre).

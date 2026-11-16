@@ -118,6 +118,8 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
     var planSection by rememberSaveable { mutableStateOf(PlanSection.WEEK) }
     var meSection by rememberSaveable { mutableStateOf(MeSection.HISTORY) }
     var showDevices by rememberSaveable { mutableStateOf(false) }
+    // Séance à ouvrir dans l'historique (depuis l'accueil)
+    var historySessionId by rememberSaveable { mutableStateOf<String?>(null) }
     val state by vm.bike.state.collectAsStateWithLifecycle()
     val hrState by vm.hr.state.collectAsStateWithLifecycle()
     val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
@@ -139,7 +141,8 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
         topBar = {
             Column(Modifier.statusBarsPadding()) {
                 UpdateBanner(vm)
-                Row(
+                // Choix du sport et coach vocal : utiles pour s'entraîner et préparer, pas sur l'accueil
+                if (tab != Tab.TODAY) Row(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -231,6 +234,11 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                     onStartSession = { openSession() },
                     onOpenStrength = { openPlan(PlanSection.COACH) },
                     onOpenPlan = { openPlan(PlanSection.COACH) },
+                    onOpenSessionDetail = { id ->
+                        historySessionId = id
+                        meSection = MeSection.HISTORY
+                        tab = Tab.ME
+                    },
                 )
 
                 Tab.TRAIN -> if (showDevices) {
@@ -296,7 +304,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                     SectionTabs(MeSection.entries, meSection, { it.label }) { meSection = it }
                     Box(Modifier.weight(1f)) {
                         when (meSection) {
-                            MeSection.HISTORY -> HistoryScreen(vm)
+                            MeSection.HISTORY -> HistoryScreen(vm, historySessionId, onOpened = { historySessionId = null })
                             MeSection.BODY -> BodyScreen(vm)
                             MeSection.SCREEN -> WebScreen(vm)
                             MeSection.APP -> androidx.compose.foundation.layout.Column(

@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +58,8 @@ private val dateFmt = SimpleDateFormat("EEE d MMM yyyy · HH:mm", Locale.FRANCE)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(vm: AppViewModel) {
+/** [openSessionId] : séance à ouvrir directement (depuis l'accueil) ; [onOpened] est appelé une fois qu'elle est prise en compte. */
+fun HistoryScreen(vm: AppViewModel, openSessionId: String? = null, onOpened: () -> Unit = {}) {
     val allSessions by vm.repo.sessions.collectAsStateWithLifecycle()
     val body by vm.repo.body.collectAsStateWithLifecycle()
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
@@ -71,8 +73,10 @@ fun HistoryScreen(vm: AppViewModel) {
     // Historique commun : tous les sports par défaut, filtre optionnel
     var filter by remember { mutableStateOf<Sport?>(null) }
     val sessions = allSessions.filter { filter == null || it.sport == filter }
-    var selectedId by remember { mutableStateOf<String?>(null) }
-    val selected = sessions.firstOrNull { it.id == selectedId }
+    var selectedId by remember { mutableStateOf(openSessionId) }
+    LaunchedEffect(openSessionId) { if (openSessionId != null) onOpened() }
+    // Séance ouverte depuis l'accueil : affichée même si un filtre de sport la masquerait
+    val selected = allSessions.firstOrNull { it.id == selectedId }
 
     if (selected != null) {
         SessionDetail(selected, vm, onBack = { selectedId = null }, onDelete = {

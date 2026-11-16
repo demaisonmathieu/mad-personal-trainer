@@ -87,6 +87,7 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MusicWidget(vm)
+        WebMiniPanel(vm)
         if (state != ConnState.CONNECTED) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),

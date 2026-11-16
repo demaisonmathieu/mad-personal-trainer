@@ -136,6 +136,7 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
     ) {
         StatusRow(run, hrState == ConnState.CONNECTED, onGoToSensors)
         MusicWidget(vm)
+        WebMiniPanel(vm)
         GpsHelp(run.gpsStatus, onAskPermission = { launcher.launch(runPermissions()) })
         permError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 

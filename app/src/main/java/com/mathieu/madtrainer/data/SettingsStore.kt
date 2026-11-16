@@ -38,6 +38,11 @@ data class Settings(
     val lastPlanAdjust: Long = 0,
     /** À la fin du programme, continuer en libre au lieu d'arrêter la séance. */
     val continueAfterEnd: Boolean = true,
+    /** Onglet Écran : page affichée (ex. chaîne Twitch), dernières pages, version ordinateur, affichage en séance. */
+    val webUrl: String = "",
+    val webRecent: List<String> = emptyList(),
+    val webDesktop: Boolean = false,
+    val webInSession: Boolean = false,
 ) {
     val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
 }
@@ -69,6 +74,10 @@ class SettingsStore(context: Context) {
         musicShuffle = prefs.getBoolean("musicShuffle", true),
         lastPlanAdjust = prefs.getLong("lastPlanAdjust", 0),
         continueAfterEnd = prefs.getBoolean("continueAfterEnd", true),
+        webUrl = prefs.getString("webUrl", "") ?: "",
+        webRecent = (prefs.getString("webRecent", "") ?: "").split("\n").filter { it.isNotBlank() },
+        webDesktop = prefs.getBoolean("webDesktop", false),
+        webInSession = prefs.getBoolean("webInSession", false),
         sport = runCatching { Sport.valueOf(prefs.getString("sport", "ELLIPTICAL")!!) }.getOrDefault(Sport.ELLIPTICAL),
     )
 
@@ -97,6 +106,10 @@ class SettingsStore(context: Context) {
             .putBoolean("musicShuffle", s.musicShuffle)
             .putLong("lastPlanAdjust", s.lastPlanAdjust)
             .putBoolean("continueAfterEnd", s.continueAfterEnd)
+            .putString("webUrl", s.webUrl)
+            .putString("webRecent", s.webRecent.joinToString("\n"))
+            .putBoolean("webDesktop", s.webDesktop)
+            .putBoolean("webInSession", s.webInSession)
             .apply()
         _settings.value = s
     }

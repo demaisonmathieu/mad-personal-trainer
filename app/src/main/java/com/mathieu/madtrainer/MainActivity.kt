@@ -27,6 +27,7 @@ import com.mathieu.madtrainer.data.Sport
 import com.mathieu.madtrainer.run.RunTracker
 import com.mathieu.madtrainer.ui.RunScreen
 import com.mathieu.madtrainer.ui.WeekScreen
+import com.mathieu.madtrainer.ui.WebScreen
 import androidx.compose.material.icons.filled.CalendarMonth
 import android.os.Bundle
 import androidx.activity.viewModels
@@ -43,6 +44,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.Icon
@@ -94,7 +96,8 @@ private enum class Tab(val icon: ImageVector) {
     DEVICE(Icons.Filled.Bluetooth),
     SESSION(Icons.Filled.FitnessCenter),
     COACH(Icons.Filled.AutoAwesome),
-    WORKOUTS(Icons.Filled.EditNote);
+    WORKOUTS(Icons.Filled.EditNote),
+    SCREEN(Icons.Filled.LiveTv);
 
     fun label(sport: Sport) = when (this) {
         WEEK -> "Semaine"
@@ -102,6 +105,7 @@ private enum class Tab(val icon: ImageVector) {
         SESSION -> if (sport == Sport.RUNNING) "Course" else "Séance"
         COACH -> "Coach"
         WORKOUTS -> "Programmes"
+        SCREEN -> "Écran"
     }
 }
 
@@ -250,6 +254,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                     else SessionScreen(vm, onGoToDevice = { tab = Tab.DEVICE })
                 Tab.COACH -> CoachScreen(vm, onStartWorkout = { tab = Tab.SESSION })
                 Tab.WORKOUTS -> WorkoutsScreen(vm, onStart = { tab = Tab.SESSION })
+                Tab.SCREEN -> WebScreen(vm)
             }
         }
     }

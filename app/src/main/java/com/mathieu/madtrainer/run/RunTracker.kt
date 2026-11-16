@@ -15,6 +15,11 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.core.content.ContextCompat
 import com.mathieu.madtrainer.data.RunEngine
 import com.mathieu.madtrainer.data.Sample
@@ -77,6 +82,21 @@ object RunTracker {
     private lateinit var app: Context
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+
+    /** Annonces en cours : la musique est baissée (« ducking ») tant qu'il en reste. */
+    private val pendingUtterances = AtomicInteger(0)
+    private val speechAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+    private val focusRequest: AudioFocusRequest by lazy {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(speechAttributes)
+            .build()
+    }
+
+    /** Appelé au démarrage d'une course (musique automatique…). */
+    var onStarted: () -> Unit = {}
     private var ticker: Job? = null
 
     /** Fournisseurs injectés par l'app. */
@@ -183,7 +203,17 @@ object RunTracker {
         if (tts == null && ::app.isInitialized) {
             tts = TextToSpeech(app) { status ->
                 ttsReady = status == TextToSpeech.SUCCESS
-                if (ttsReady) tts?.language = Locale.FRANCE
+                if (ttsReady) {
+                    tts?.language = Locale.FRANCE
+                    tts?.setAudioAttributes(speechAttributes)
+                    tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) = utteranceFinished()
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) = utteranceFinished()
+                        override fun onError(utteranceId: String?, errorCode: Int) = utteranceFinished()
+                    })
+                }
             }
         }
     }
@@ -230,6 +260,7 @@ object RunTracker {
 
     fun start(workout: Workout?) {
         if (_state.value.running) return
+        onStarted()
         warmUpGps()
         recentPoints.clear()
         nextKmAnnounce = 1000.0
@@ -430,7 +461,19 @@ object RunTracker {
 
     fun speak(text: String) {
         if (!ttsReady || !voiceEnabled()) return
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "run-${System.nanoTime()}")
+        // La musique baisse pendant l'annonce puis remonte
+        if (pendingUtterances.getAndIncrement() == 0) {
+            runCatching { app.getSystemService(AudioManager::class.java)?.requestAudioFocus(focusRequest) }
+        }
+        val result = tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "run-${System.nanoTime()}")
+        if (result != TextToSpeech.SUCCESS) utteranceFinished()
+    }
+
+    private fun utteranceFinished() {
+        if (pendingUtterances.decrementAndGet() <= 0) {
+            pendingUtterances.set(0)
+            runCatching { app.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(focusRequest) }
+        }
     }
 
     /** 1 = court (km), 2 = double (consigne), 3 = long (changement d'étape) */

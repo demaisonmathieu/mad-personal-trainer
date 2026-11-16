@@ -54,6 +54,7 @@ import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.health.HealthAvailability
 import com.mathieu.madtrainer.health.HealthConnectSource
 import com.mathieu.madtrainer.health.sourceLabel
+import com.mathieu.madtrainer.media.MusicPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -570,6 +571,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RunTracker.hrAlertsEnabled = { settingsStore.settings.value.hrAlerts }
         RunTracker.weightKg = { repo.profile.value.weightKg }
         RunTracker.onFinished = { rec -> appScope.launch { repo.saveSession(rec) } }
+        RunTracker.onStarted = { startMusicIfWanted() }
+        MusicPlayer.init(app)
     }
 
     init {
@@ -636,8 +639,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ séance
 
+    /** Lance la playlist choisie au démarrage d'une séance (si l'option est active et que rien ne joue déjà). */
+    fun startMusicIfWanted() {
+        val s = settingsStore.settings.value
+        if (!s.musicAutoStart || s.musicUri.isBlank() || MusicPlayer.state.value.playing) return
+        MusicPlayer.playSpotify(s.musicUri, s.musicShuffle)
+    }
+
     fun startSession(workout: Workout?) {
         if (_session.value.running) return
+        startMusicIfWanted()
         _lastFinished.value = null
         appliedStep = -1
         _session.value = LiveSession(

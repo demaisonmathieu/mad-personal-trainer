@@ -15,6 +15,7 @@ Dépôt public : `demaisonmathieu/mad-personal-trainer` (push en SSH). Package `
 - `coach/` : `CoachPrompt`/`CoachParser` (plan commun course + elliptique), `JsonRepair` (réponses IA coupées), `StrengthPrompt`/`StrengthModels`/`StrengthPlayer` (renfo, `image_id`), `ExerciseCatalog` (banque free-exercise-db dans `assets/exercises.json`, correspondances FR → id), `AnthropicClient` (API Messages, reprise si `max_tokens`). Sans IA : `RulePlanner` (plan course + elliptique par règles : volume calé sur l'historique app + Strava, +10 %/semaine, allègement toutes les 4 semaines, course limitée si douleur ou IMC ≥ 30, allures tirées des sorties récentes ; produit un `CoachPlan` importé comme celui de l'IA) et `NutritionPlanner` (métabolisme balance > masse maigre > Mifflin, déficit, macros, repas types, affiché dans l'écran Corps).
 - `strava/` : OAuth `madtrainer://localhost/strava`, activités 90 j, poids, zones cardio (`/athlete/zones`).
 - `health/` : `HealthConnectSource` (lecture Health Connect : poids et composition de la balance Starfit, FC de repos Zepp ; `connect-client` 1.1.0-beta01 car la 1.1.0 stable exige compileSdk 36 / AGP 8.9). Calculs dans `data/BodyMetrics.kt` (`BodyStats` : regroupement en pesées, tendances, résumé pour les prompts IA) ; la dernière pesée met à jour le profil.
+- `media/` : `MusicPlayer` (sessions média Android via `MediaListener` = NotificationListenerService, accès aux notifications requis ; commandes, aléatoire, lancement d'une playlist Spotify par `playFromUri` ou ouverture de l'appli), `SpotifyLinks` (lien de partage → `spotify:playlist:…`). Widget `ui/MusicWidget` dans Séance et Course ; lancement auto au démarrage (`Settings.musicAutoStart`). Les annonces vocales prennent le focus audio en « ducking ».
 - `run/` : `RunTracker` (GPS + FUSED, TTS fr, vibrations, guidage allure/zone, préavis, alarme cardio), `RunService` (service de premier plan, type location).
 - `ui/` : onglets Semaine (défaut, glisser-déposer des séances, décalage du plan, édition), Vélo/Capteurs, Séance/Course, Coach, Programmes ; Historique et Corps (boutons en haut, `BodyScreen`) ; `ReportCard` (rapport + analyse IA), `ExerciseMedia` (images animées + YouTube), `Reorder` (drag & drop maison), `StrengthSessionEditor`.
 
@@ -28,7 +29,7 @@ Service `49535343-fe7d-…`, écriture `…8841…`, notif `…1e4d…`. Séquen
 - kotlinx : `String.serializer()` (pas `serializer<String>()`), pas d'API expérimentales (`allowTrailingComma`).
 
 ## Tests unitaires (app/src/test)
-FtmsParserTest (+ DomyosLegacy), CoachTest (+ Strava, parseurs), RunEngineTest, StrengthTest, ConverterTest, WeekPlannerTest, HrZonesTest, ReportVoiceTest, BodyMetricsTest, RulePlannerTest (+ nutrition), coach/JsonRepairTest, coach/ExerciseCatalogTest.
+FtmsParserTest (+ DomyosLegacy), CoachTest (+ Strava, parseurs), RunEngineTest, StrengthTest, ConverterTest, WeekPlannerTest, HrZonesTest, ReportVoiceTest, BodyMetricsTest, RulePlannerTest (+ nutrition), SpotifyLinksTest, coach/JsonRepairTest, coach/ExerciseCatalogTest.
 
 ## État au 16/11/2026
 Dernières fonctions ajoutées, **compilées et testées en CI (release v1.0.24), pas encore essayées sur l'appareil** : glisser-déposer « Ma semaine », images/vidéos renfo, zones cardio Strava, coach vocal (préavis 30 s, alerte cardio trop élevé, annonces sur l'elliptique), rapport de progression avec analyse IA.

@@ -84,6 +84,7 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        MusicWidget(vm)
         if (state != ConnState.CONNECTED) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),

@@ -66,6 +66,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     // Health Connect (1.1.0 stable exige compileSdk 36 / AGP 8.9)
     implementation("androidx.health.connect:connect-client:1.1.0-beta01")
+    // Contrôle de la musique (Spotify…) : MediaControllerCompat (aléatoire, lecture d'une URI)
+    implementation("androidx.media:media:1.7.0")
 
     testImplementation("junit:junit:4.13.2")
 }

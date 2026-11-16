@@ -30,6 +30,10 @@ data class Settings(
     val voice: Boolean = true,
     /** Alerte quand le cardio est trop haut pour l'étape. */
     val hrAlerts: Boolean = true,
+    /** Musique : playlist Spotify (URI « spotify:playlist:… »), lancée au démarrage des séances si [musicAutoStart]. */
+    val musicUri: String = "",
+    val musicAutoStart: Boolean = false,
+    val musicShuffle: Boolean = true,
 ) {
     val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
 }
@@ -56,6 +60,9 @@ class SettingsStore(context: Context) {
         includeStrava = prefs.getBoolean("includeStrava", true),
         voice = prefs.getBoolean("voice", true),
         hrAlerts = prefs.getBoolean("hrAlerts", true),
+        musicUri = prefs.getString("musicUri", "") ?: "",
+        musicAutoStart = prefs.getBoolean("musicAutoStart", false),
+        musicShuffle = prefs.getBoolean("musicShuffle", true),
         sport = runCatching { Sport.valueOf(prefs.getString("sport", "ELLIPTICAL")!!) }.getOrDefault(Sport.ELLIPTICAL),
     )
 
@@ -79,6 +86,9 @@ class SettingsStore(context: Context) {
             .putString("sport", s.sport.name)
             .putBoolean("voice", s.voice)
             .putBoolean("hrAlerts", s.hrAlerts)
+            .putString("musicUri", s.musicUri)
+            .putBoolean("musicAutoStart", s.musicAutoStart)
+            .putBoolean("musicShuffle", s.musicShuffle)
             .apply()
         _settings.value = s
     }

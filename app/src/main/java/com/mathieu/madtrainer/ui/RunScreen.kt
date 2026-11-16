@@ -1,6 +1,14 @@
 package com.mathieu.madtrainer.ui
 
 import com.mathieu.madtrainer.data.HrZones
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.mathieu.madtrainer.data.StepMode
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -245,92 +253,134 @@ private fun SelectedWorkout(w: Workout, maxHr: HrZones, onClear: () -> Unit) {
 @Composable
 private fun RunningView(run: RunState, maxHr: HrZones) {
     var confirmStop by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val w = run.workout
+    val step = run.step
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Chrono géant
-        Text(
-            formatDuration(run.elapsed),
-            fontSize = 64.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
-        if (run.paused) {
-            Text("EN PAUSE", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile("Distance", "%.2f".format(run.distanceM / 1000), "km", Icons.Filled.Straighten, MaterialTheme.colorScheme.primary, Modifier.weight(1f), big = true)
-            MetricTile("Allure", formatPace(run.currentPace), "/km", Icons.Filled.Speed, CadenceColor, Modifier.weight(1f), big = true)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile("Allure moy.", formatPace(run.avgPace), "/km", Icons.Filled.Timer, MaterialTheme.colorScheme.secondary, Modifier.weight(1f))
-            MetricTile(
-                "Cardio" + (run.hr?.let { " · Z${maxHr.zoneOf(it)}" } ?: ""),
-                run.hr?.toString() ?: "--", "bpm", Icons.Filled.Favorite, HrColor, Modifier.weight(1f),
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                formatDuration(run.elapsed),
+                fontFamily = Display,
+                fontSize = 76.sp,
+                fontWeight = FontWeight.Bold,
+                style = NumberStyle,
+            )
+            Text(
+                if (run.paused) "EN PAUSE" else "temps total",
+                color = if (run.paused) MaterialTheme.colorScheme.error else Night.Muted,
+                fontWeight = if (run.paused) FontWeight.Bold else FontWeight.Normal,
+                style = MaterialTheme.typography.labelLarge,
             )
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val g = if (step != null && step.mode != StepMode.FREE) RunEngine.guidance(step, run.currentPace, run.hr, maxHr) else null
+            BigNumber(
+                "Allure", formatPace(run.currentPace), "/km",
+                when (g) {
+                    RunEngine.Guidance.NONE -> "dans la cible" to Night.Good
+                    RunEngine.Guidance.FASTER -> "accélère" to Color(0xFFFFB020)
+                    RunEngine.Guidance.SLOWER -> "ralentis" to Color(0xFFFFB020)
+                    null -> "" to Night.Muted
+                },
+                Modifier.weight(1f),
+            )
+            BigNumber(
+                "Distance", "%.2f".format(run.distanceM / 1000).replace('.', ','), "km",
+                "moy. ${formatPace(run.avgPace)}" to Night.Muted,
+                Modifier.weight(1f),
+            )
+        }
+        HeartRateCard(run.hr, maxHr)
 
-        val w = run.workout
-        val step = run.step
         if (w != null && step != null) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Étape ${run.stepIndex + 1}/${w.steps.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Night.AccentContainer),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Night.Accent),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(step.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(RunEngine.targetText(step, maxHr))
+                            Text(
+                                "ÉTAPE ${run.stepIndex + 1} / ${w.steps.size}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Night.AccentText,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(step.name, style = MaterialTheme.typography.titleLarge)
+                            Text(RunEngine.targetText(step, maxHr), color = Night.Soft)
                         }
                         Text(
                             // Prolongation libre : temps écoulé au lieu d'un compte à rebours
                             if (SessionExtension.isFreeExtension(step)) "+" + formatDuration(run.stepElapsed)
                             else RunEngine.stepRemainingText(step, run.stepElapsed, run.stepDistance),
-                            style = MaterialTheme.typography.headlineMedium,
+                            fontFamily = Display,
+                            fontSize = 34.sp,
                             fontWeight = FontWeight.Bold,
+                            style = NumberStyle,
                         )
                     }
                     if (!SessionExtension.isFreeExtension(step)) {
                         val progress = step.distanceM?.let { (run.stepDistance / it).toFloat() }
                             ?: (run.stepElapsed.toFloat() / step.durationSec.coerceAtLeast(1))
-                        LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                        LinearProgressIndicator(
+                            progress = { progress.coerceIn(0f, 1f) },
+                            color = Night.Accent,
+                            trackColor = Color(0xFF3D2A1A),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     w.steps.getOrNull(run.stepIndex + 1)?.let { n ->
                         Text(
-                            "Ensuite : ${n.name} — ${RunEngine.stepLengthText(n)}, ${RunEngine.targetText(n, maxHr)}",
+                            "Ensuite : ${n.name} · ${RunEngine.stepLengthText(n)}, ${RunEngine.targetText(n, maxHr)}",
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 6.dp),
+                            color = Night.Soft,
                         )
                     }
                 }
             }
         }
 
-        if (run.samples.size > 5) {
-            ChartCard("Allure (min/km, plus haut = plus rapide)", run.samples.takeLast(600).map { s -> s.paceSecPerKm?.let { 1000f / it } }, CadenceColor)
-            if (run.samples.any { it.hr != null }) {
-                ChartCard("Cardio (bpm)", run.samples.takeLast(600).map { it.hr?.toFloat() }, HrColor)
+        // Commandes : gros boutons ronds, utilisables en courant
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            val canExtend = w != null && !SessionExtension.isFreeExtension(step)
+            RoundButton(
+                onClick = { RunTracker.extendStep() },
+                size = 64,
+                container = Night.Surface,
+                enabled = canExtend,
+                label = "Ajouter 5 minutes",
+            ) { Text("+5'", fontWeight = FontWeight.SemiBold, color = if (canExtend) Night.Text else Night.Muted) }
+            RoundButton(
+                onClick = { RunTracker.togglePause() },
+                size = 92,
+                container = Night.Accent,
+                label = if (run.paused) "Reprendre" else "Pause",
+            ) { Icon(if (run.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, null, Modifier.size(38.dp), tint = Night.Bg) }
+            RoundButton(
+                onClick = { confirmStop = true },
+                size = 64,
+                container = Color(0xFF1E1215),
+                label = "Terminer",
+            ) { Icon(Icons.Filled.Stop, null, tint = Color(0xFFFF6B81)) }
+        }
+        if (w != null) {
+            TextButton(onClick = { RunTracker.skipStep() }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Icon(Icons.Filled.SkipNext, null)
+                Text(" Étape suivante")
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            FilledTonalButton(onClick = { RunTracker.togglePause() }, modifier = Modifier.weight(1f)) {
-                Icon(if (run.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, null)
-                Text(if (run.paused) " Reprendre" else " Pause")
-            }
-            if (w != null) {
-                // « Je me sens bien » : +5 min ou +1 km (masqué pendant la prolongation libre)
-                if (!SessionExtension.isFreeExtension(run.step)) {
-                    OutlinedButton(onClick = { RunTracker.extendStep() }) { Icon(Icons.Filled.MoreTime, "Prolonger") }
-                }
-                OutlinedButton(onClick = { RunTracker.skipStep() }) { Icon(Icons.Filled.SkipNext, "Étape suivante") }
-            }
-            Button(onClick = { confirmStop = true }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Stop, null)
-                Text(" Terminer")
+        if (run.samples.size > 5) {
+            ChartCard("Vitesse (km/h)", run.samples.takeLast(600).map { s -> s.paceSecPerKm?.let { 3600f / it } }, CadenceColor)
+            if (run.samples.any { it.hr != null }) {
+                ChartCard("Cardio (bpm)", run.samples.takeLast(600).map { it.hr?.toFloat() }, HrColor)
             }
         }
         Text(
             "Tu peux éteindre l'écran : le suivi et les annonces vocales continuent.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Night.Muted,
         )
     }
     if (confirmStop) {
@@ -341,6 +391,74 @@ private fun RunningView(run: RunState, maxHr: HrZones) {
             dismissButton = { TextButton(onClick = { confirmStop = false; RunTracker.stop(save = false) }) { Text("Abandonner") } },
         )
     }
+}
+
+/** Grand chiffre de course avec une ligne d'état colorée. */
+@Composable
+private fun BigNumber(label: String, value: String, unit: String, hint: Pair<String, Color>, modifier: Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label.uppercase(), style = MaterialTheme.typography.labelMedium, color = Night.Muted)
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, fontFamily = Display, fontSize = 40.sp, fontWeight = FontWeight.Bold, style = NumberStyle)
+                Text(" $unit", color = Night.Muted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp))
+            }
+            if (hint.first.isNotBlank()) Text(hint.first, style = MaterialTheme.typography.labelMedium, color = hint.second)
+        }
+    }
+}
+
+/** Cardio en couleur de zone, avec la jauge des 5 zones. */
+@Composable
+fun HeartRateCard(hr: Int?, zones: HrZones) {
+    val zone = hr?.let { zones.zoneOf(it) }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("CARDIO", style = MaterialTheme.typography.labelMedium, color = Night.Muted, modifier = Modifier.weight(1f))
+                Text(
+                    hr?.toString() ?: "--",
+                    fontFamily = Display,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = zone?.let { zoneColor(it) } ?: Night.Text,
+                    style = NumberStyle,
+                )
+                Text(" bpm" + (zone?.let { " · Z$it" } ?: ""), color = Night.Soft, modifier = Modifier.padding(bottom = 4.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                (1..5).forEach { z ->
+                    val c = zoneColor(z)
+                    Box(
+                        Modifier.weight(1f).height(if (z == zone) 12.dp else 8.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (z == zone) c else c.copy(alpha = 0.3f)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Bouton rond (commandes de séance). */
+@Composable
+fun RoundButton(
+    onClick: () -> Unit,
+    size: Int,
+    container: Color,
+    label: String,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.material3.FilledIconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(size.dp).semantics { contentDescription = label },
+        colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+            containerColor = container,
+            disabledContainerColor = container.copy(alpha = 0.5f),
+        ),
+    ) { content() }
 }
 
 @Composable

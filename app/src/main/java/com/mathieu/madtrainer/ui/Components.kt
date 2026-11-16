@@ -41,33 +41,39 @@ fun MetricTile(
 ) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        colors = CardDefaults.cardColors(containerColor = Night.Surface),
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
                 Text(
-                    "  $label",
+                    "  " + label.uppercase(),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 0.6.sp,
+                    color = Night.Muted,
                 )
             }
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     value,
-                    fontSize = if (big) 44.sp else 28.sp,
+                    fontFamily = Display,
+                    fontSize = if (big) 48.sp else 30.sp,
                     fontWeight = FontWeight.Bold,
+                    style = NumberStyle,
                 )
                 Text(
                     " $unit",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Night.Muted,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
             }
         }
     }
 }
+
+/** Chiffres à chasse fixe : le chrono et les allures ne « sautent » pas d'une seconde à l'autre. */
+val NumberStyle = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
 
 /** Courbe simple ; les valeurs nulles créent une coupure. */
 @Composable
@@ -98,7 +104,7 @@ fun LineChart(values: List<Float?>, color: Color, modifier: Modifier = Modifier,
     }
 }
 
-/** Profil d'une séance : une barre par étape, largeur = durée, hauteur = intensité. */
+/** Profil d'une séance : une barre par étape, largeur = durée, hauteur = intensité, couleur = zone cardio. */
 @Composable
 fun WorkoutProfile(
     workout: Workout,
@@ -107,9 +113,7 @@ fun WorkoutProfile(
     progressSec: Int? = null,
 ) {
     val steps = workout.steps
-    val active = MaterialTheme.colorScheme.primary
-    val inactive = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-    val cursor = MaterialTheme.colorScheme.onSurface
+    val cursor = Night.Text
     Canvas(modifier) {
         val total = workout.totalSec.toFloat()
         if (total <= 0f) return@Canvas
@@ -121,19 +125,28 @@ fun WorkoutProfile(
         steps.forEachIndexed { i, s ->
             val w = size.width * s.durationSec / total
             val ratio = intensity(s, maxRes, maxPow, minPace)
-            val h = size.height * (0.15f + 0.85f * ratio)
-            drawRect(
-                color = if (currentIndex == null || i == currentIndex) active else inactive,
+            val h = size.height * (0.2f + 0.8f * ratio)
+            val c = zoneColor(stepZone(s, steps))
+            drawRoundRect(
+                color = if (currentIndex == null || i <= currentIndex) c else c.copy(alpha = 0.35f),
                 topLeft = Offset(x, size.height - h),
-                size = Size((w - 2f).coerceAtLeast(1f), h),
+                size = Size((w - 3f).coerceAtLeast(1f), h),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
             )
             x += w
         }
         if (progressSec != null) {
             val cx = size.width * progressSec / total
-            drawLine(cursor, Offset(cx, 0f), Offset(cx, size.height), strokeWidth = 3f)
+            drawLine(cursor, Offset(cx, -4f), Offset(cx, size.height + 4f), strokeWidth = 4f)
         }
     }
+}
+
+/** Zone cardio d'une étape (consigne en zone, sinon zone équivalente selon l'intensité relative). */
+fun stepZone(s: WorkoutStep, all: List<WorkoutStep>): Int = when (s.mode) {
+    StepMode.HR_ZONE -> s.target.toInt().coerceIn(1, 5)
+    StepMode.FREE -> 1
+    else -> com.mathieu.madtrainer.data.WorkoutConverter.zoneFor(s, all)
 }
 
 private fun intensity(s: WorkoutStep, maxRes: Float, maxPow: Float, minPace: Float): Float = when (s.mode) {

@@ -162,7 +162,6 @@ fun WeekScreen(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Ma semaine", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        HydrationCard()
 
         if (ref == null) {
             Card(Modifier.fillMaxWidth()) {

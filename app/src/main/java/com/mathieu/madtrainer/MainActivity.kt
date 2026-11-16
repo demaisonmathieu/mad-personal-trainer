@@ -109,7 +109,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 
 private enum class PlanSection(val label: String) { WEEK("Semaine"), WORKOUTS("Programmes"), COACH("Coach") }
 
-private enum class MeSection(val label: String) { HISTORY("Historique"), BODY("Corps"), SCREEN("Écran") }
+private enum class MeSection(val label: String) { HISTORY("Historique"), BODY("Corps"), SCREEN("Écran"), APP("Appli") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -299,6 +299,13 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                             MeSection.HISTORY -> HistoryScreen(vm)
                             MeSection.BODY -> BodyScreen(vm)
                             MeSection.SCREEN -> WebScreen(vm)
+                            MeSection.APP -> androidx.compose.foundation.layout.Column(
+                                Modifier.fillMaxSize().padding(16.dp),
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                            ) {
+                                com.mathieu.madtrainer.ui.ScreenHeader("Appli", eyebrow = "Version et mises à jour")
+                                com.mathieu.madtrainer.ui.AppUpdateCard(vm)
+                            }
                         }
                     }
                 }

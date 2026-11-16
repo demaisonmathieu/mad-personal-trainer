@@ -69,3 +69,39 @@ fun UpdateBanner(vm: AppViewModel) {
         }
     }
 }
+
+/** Version installée, état de la recherche et bouton « Vérifier » (+ « Installer » si une version est prête). */
+@Composable
+fun AppUpdateCard(vm: AppViewModel) {
+    val update by vm.update.collectAsStateWithLifecycle()
+    NightCard {
+        Eyebrow("Mise à jour")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("MAD Personal Trainer ${com.mathieu.madtrainer.update.Updater.currentVersionName}", fontWeight = FontWeight.SemiBold)
+                Text(
+                    when (val u = update) {
+                        UpdateState.Checking -> "Recherche de mise à jour…"
+                        UpdateState.UpToDate -> "À jour"
+                        is UpdateState.Available -> "Version ${u.info.versionName} disponible"
+                        is UpdateState.Downloading -> "Téléchargement… ${(u.progress * 100).toInt()} %"
+                        is UpdateState.ReadyToInstall -> "Version ${u.info.versionName} prête à installer"
+                        is UpdateState.Error -> "Erreur : ${u.message}"
+                        UpdateState.Idle -> "Appuie sur Vérifier pour chercher une nouvelle version"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Night.Muted,
+                )
+            }
+            when (update) {
+                is UpdateState.Available, is UpdateState.ReadyToInstall ->
+                    Button(onClick = { vm.downloadAndInstall() }) { Text("Installer") }
+                is UpdateState.Downloading, UpdateState.Checking -> Unit
+                else -> androidx.compose.material3.OutlinedButton(onClick = { vm.checkForUpdate() }) { Text("Vérifier") }
+            }
+        }
+        (update as? UpdateState.Downloading)?.let { d ->
+            LinearProgressIndicator(progress = { d.progress }, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}

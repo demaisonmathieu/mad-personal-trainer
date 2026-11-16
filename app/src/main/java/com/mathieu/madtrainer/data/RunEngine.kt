@@ -17,6 +17,15 @@ object RunEngine {
     /** Kcal estimées de course : ≈ 1 kcal / kg / km. */
     fun runKcal(distanceM: Double, weightKg: Double): Int = (distanceM / 1000.0 * weightKg).roundToInt()
 
+    /**
+     * Annonce au passage d'un kilomètre : temps de CE kilomètre (il change à chaque km), puis allure moyenne
+     * depuis le départ (qui, elle, varie peu après quelques km).
+     */
+    fun kmAnnouncement(km: Int, splitSec: Int, avgPace: Int?, hr: Int?): String =
+        "Kilomètre $km en ${spokenDuration(splitSec)}." +
+            (avgPace?.let { " Moyenne ${spokenPace(it)} au kilomètre." } ?: "") +
+            (hr?.let { " Cardio $it." } ?: "")
+
     /** Une étape est-elle terminée ? (distance si définie, sinon durée) */
     fun stepDone(step: WorkoutStep, stepElapsedSec: Int, stepDistanceM: Double): Boolean =
         step.distanceM?.let { stepDistanceM >= it } ?: (stepElapsedSec >= step.durationSec)

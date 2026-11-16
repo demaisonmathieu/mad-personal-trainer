@@ -117,6 +117,8 @@ object RunTracker {
 
     // Annonces
     private var nextKmAnnounce = 1000.0
+    /** Temps écoulé (s) au passage du dernier kilomètre. */
+    private var lastKmAt = 0
     private var lastGuidanceAt = 0L
     private var oneMinuteWarned = false
     private var distanceWarned = false
@@ -270,6 +272,7 @@ object RunTracker {
         warmUpGps()
         recentPoints.clear()
         nextKmAnnounce = 1000.0
+        lastKmAt = 0
         oneMinuteWarned = false
         distanceWarned = false
         hrAlarm.reset()
@@ -388,10 +391,8 @@ object RunTracker {
             val km = (nextKmAnnounce / 1000).toInt()
             nextKmAnnounce += 1000.0
             vibrate(1)
-            speak(
-                "Kilomètre $km. " + (ns.avgPace?.let { "Allure moyenne ${spokenPace(it)}." } ?: "") +
-                    (hr?.let { " Cardio $it." } ?: ""),
-            )
+            speak(RunEngine.kmAnnouncement(km, ns.elapsed - lastKmAt, ns.avgPace, hr))
+            lastKmAt = ns.elapsed
         }
 
         val w = ns.workout ?: return

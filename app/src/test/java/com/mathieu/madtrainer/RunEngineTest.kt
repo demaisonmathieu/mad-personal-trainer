@@ -47,4 +47,13 @@ class RunEngineTest {
         assertEquals(RunEngine.Guidance.FASTER, RunEngine.guidance(z2, null, 100, 180))
         assertEquals(RunEngine.Guidance.NONE, RunEngine.guidance(z2, null, 120, 180))
     }
+
+    @Test
+    fun kmAnnouncementGivesThisKilometreTime() {
+        assertEquals(
+            "Kilomètre 3 en 5 minutes 42. Moyenne 5 minutes 50 au kilomètre. Cardio 152.",
+            RunEngine.kmAnnouncement(3, 342, 350, 152),
+        )
+        assertEquals("Kilomètre 1 en 6 minutes.", RunEngine.kmAnnouncement(1, 360, null, null))
+    }
 }

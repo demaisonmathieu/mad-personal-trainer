@@ -57,6 +57,8 @@ import com.mathieu.madtrainer.data.TrainingLoad
 import com.mathieu.madtrainer.data.SessionExtension
 import com.mathieu.madtrainer.data.TrendReport
 import com.mathieu.madtrainer.data.BodyStats
+import com.mathieu.madtrainer.data.Vma
+import com.mathieu.madtrainer.data.VmaEstimate
 import com.mathieu.madtrainer.health.HealthAvailability
 import com.mathieu.madtrainer.health.HealthConnectSource
 import com.mathieu.madtrainer.health.sourceLabel
@@ -153,6 +155,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val coach: StateFlow<CoachState> = _coach
 
     fun saveProfile(p: UserProfile) = viewModelScope.launch { repo.saveProfile(p) }
+
+    /** FC de repos pour les estimations : profil, sinon moyenne 7 jours de la montre. */
+    fun restingHr(): Int? = repo.profile.value.restingHr ?: BodyStats.recentRestingHr(repo.body.value.restingHr, System.currentTimeMillis())
+
+    fun estimateVma(rec: SessionRecord): VmaEstimate? = Vma.estimate(rec, repo.profile.value.estimatedMaxHr, restingHr())
+
+    /** Enregistre la VMA : le tableau d'allures et les séances de course générées sans IA l'utilisent ensuite. */
+    fun saveVma(vmaKmh: Double, at: Long) = viewModelScope.launch {
+        repo.saveProfile(repo.profile.value.copy(vmaKmh = vmaKmh, vmaDate = at))
+    }
 
     private fun equipment(): Equipment {
         val caps = bike.caps.value

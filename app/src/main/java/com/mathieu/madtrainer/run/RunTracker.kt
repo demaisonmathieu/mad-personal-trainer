@@ -112,6 +112,7 @@ object RunTracker {
     private val recentPoints = ArrayDeque<Pair<Long, Double>>() // (temps ms, distance cumulée)
     private var lastLat: Double? = null
     private var lastLon: Double? = null
+    private var lastAlt: Double? = null
     private var lastGpsPointAt = 0L
 
     // Annonces
@@ -240,6 +241,8 @@ object RunTracker {
         val s = _state.value
         lastLat = loc.latitude
         lastLon = loc.longitude
+        // Altitude : seulement depuis la puce GPS, avec une précision verticale correcte quand elle est connue
+        if (fromGps && loc.hasAltitude() && (!loc.hasVerticalAccuracy() || loc.verticalAccuracyMeters <= 20f)) lastAlt = loc.altitude
         val prev = lastFix
         val now = System.currentTimeMillis()
         if (s.running && !s.paused && prev != null) {
@@ -271,6 +274,7 @@ object RunTracker {
         distanceWarned = false
         hrAlarm.reset()
         lastFix = null
+        lastAlt = null
         _state.value = RunState(
             running = true,
             startedAt = System.currentTimeMillis(),
@@ -367,6 +371,7 @@ object RunTracker {
             step = s.workout?.let { s.stepIndex },
             lat = lastLat,
             lon = lastLon,
+            alt = lastAlt,
         )
         var ns = s.copy(
             elapsed = e,

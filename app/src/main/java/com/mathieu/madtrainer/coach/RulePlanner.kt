@@ -7,6 +7,7 @@ import com.mathieu.madtrainer.data.SessionRecord
 import com.mathieu.madtrainer.data.Sport
 import com.mathieu.madtrainer.data.WeekPlanner
 import com.mathieu.madtrainer.data.formatPace
+import com.mathieu.madtrainer.data.Vma
 import com.mathieu.madtrainer.strava.StravaActivity
 import java.time.Instant
 import kotlin.math.abs
@@ -253,6 +254,8 @@ object RulePlanner {
         val run = sport == Sport.RUNNING
         val b = StepsBuilder()
         val pace = if (run) perf.runPaceSecKm else null
+        // VMA validée : allures en % de VMA, sinon décalage par rapport à l'allure habituelle
+        val vma = if (run) p.vmaKmh else null
         fun z(n: Int) = zones.range(n).let { "${it.first}–${it.last} bpm" }
         val name: String
         val purpose: String
@@ -291,7 +294,7 @@ object RulePlanner {
                 b.zone("Échauffement", 10.0, 1)
                 val avail = total - 15.0
                 val reps = (avail / (block + 3)).toInt().coerceIn(1, 4)
-                val tempoPace = pace?.let { (it - 25).coerceIn(180, 800) }
+                val tempoPace = vma?.let { Vma.paceAt(it, 0.87) } ?: pace?.let { (it - 25).coerceIn(180, 800) }
                 repeat(reps) { i ->
                     if (tempoPace != null) b.pace("Tempo ${i + 1}/$reps", block, tempoPace, 3) else b.zone("Tempo ${i + 1}/$reps", block, 3)
                     b.zone("Récupération", 3.0, 2)
@@ -308,7 +311,7 @@ object RulePlanner {
                 b.zone("Échauffement actif", 6.0, 2)
                 val avail = total - 17.0
                 val reps = (avail / (work + 2)).toInt().coerceIn(2, 8)
-                val ivPace = pace?.let { (it - 50).coerceIn(170, 750) }
+                val ivPace = vma?.let { Vma.paceAt(it, 0.93) } ?: pace?.let { (it - 50).coerceIn(170, 750) }
                 repeat(reps) { i ->
                     if (ivPace != null) b.pace("Rapide ${i + 1}/$reps", work, ivPace, 4) else b.zone("Rapide ${i + 1}/$reps", work, 4)
                     b.zone("Récupération", 2.0, 2)
@@ -324,7 +327,7 @@ object RulePlanner {
                 b.zone("Échauffement actif", 6.0, 2)
                 val avail = total - 17.0
                 val reps = (avail / 3).toInt().coerceIn(4, 12)
-                val vPace = pace?.let { (it - 75).coerceIn(160, 700) }
+                val vPace = vma?.let { Vma.paceAt(it, 1.0) } ?: pace?.let { (it - 75).coerceIn(160, 700) }
                 repeat(reps) { i ->
                     if (vPace != null) b.pace("Vite ${i + 1}/$reps", 1.0, vPace, 5) else b.zone("Vite ${i + 1}/$reps", 1.0, 5)
                     b.zone("Récupération", 2.0, 1)
@@ -345,6 +348,7 @@ object RulePlanner {
         val bits = mutableListOf<String>()
         perf.weeklyCardioMin?.let { bits += "$it min de cardio par semaine ces 4 dernières semaines" }
         perf.runPaceSecKm?.let { bits += "allure habituelle ${formatPace(it)}/km" }
+        p.vmaKmh?.let { bits += "VMA ${Vma.fmt(it)} km/h" }
         perf.longestRunMin?.let { bits += "sortie la plus longue récente $it min" }
         if (bits.isNotEmpty()) append(" et de ton historique (${bits.joinToString(", ")})")
         append(". ")
@@ -363,7 +367,7 @@ object RulePlanner {
 
     private fun advice(p: UserProfile, perf: PerfSnapshot, zones: HrZones): List<String> = buildList {
         add("Tes zones : ${zones.describe()}" + if (zones.custom) " (importées de Strava)." else " (estimées à partir de la FC max ${p.estimatedMaxHr} bpm).")
-        if (perf.runPaceSecKm == null) add("Pas de sortie course récente : les consignes de course sont en zones cardio ; les allures seront calculées dès que tu auras couru.")
+        if (perf.runPaceSecKm == null && p.vmaKmh == null) add("Pas de sortie course récente : les consignes de course sont en zones cardio ; les allures seront calculées dès que tu auras couru.")
         add("En zone 2, si le cardio dérive au-dessus de la zone, ralentis ou marche : c'est normal en début de plan.")
         add("Régénère le plan toutes les 4 semaines : il se recale sur tes nouvelles performances et ton poids.")
     }

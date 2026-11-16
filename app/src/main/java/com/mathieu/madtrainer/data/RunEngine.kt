@@ -107,6 +107,40 @@ object RunEngine {
     )
 }
 
+/** Temps d'un kilomètre (ou du dernier morceau, [distanceM] < 1000) et temps cumulé à son passage. */
+data class KmSplit(val km: Int, val distanceM: Int, val sec: Int, val cumulativeSec: Int) {
+    /** Allure du morceau en s/km (égale à [sec] pour un kilomètre complet). */
+    val paceSecKm: Int get() = (sec * 1000.0 / distanceM.coerceAtLeast(1)).roundToInt()
+}
+
+/**
+ * Temps au kilomètre à partir des échantillons (1/s) : le passage de chaque km est interpolé entre deux mesures.
+ * Le dernier morceau (≥ 100 m) est ajouté avec son allure.
+ */
+fun kmSplits(samples: List<Sample>): List<KmSplit> {
+    val pts = samples.filter { it.distanceM != null }
+    if (pts.size < 2) return emptyList()
+    val out = mutableListOf<KmSplit>()
+    var nextKm = 1000
+    var lastCross = 0.0
+    var prev = pts.first()
+    for (p in pts.drop(1)) {
+        val d = p.distanceM!!
+        while (d >= nextKm) {
+            val d0 = prev.distanceM!!
+            val cross = if (d > d0) prev.t + (nextKm - d0).toDouble() / (d - d0) * (p.t - prev.t) else p.t.toDouble()
+            out += KmSplit(nextKm / 1000, 1000, (cross - lastCross).roundToInt(), cross.roundToInt())
+            lastCross = cross
+            nextKm += 1000
+        }
+        prev = p
+    }
+    val last = pts.last()
+    val rest = last.distanceM!! - (nextKm - 1000)
+    if (rest >= 100) out += KmSplit(nextKm / 1000, rest, (last.t - lastCross).roundToInt(), last.t)
+    return out
+}
+
 /** 345 → « 5'45" » */
 fun formatPace(secPerKm: Int?): String =
     if (secPerKm == null || secPerKm <= 0) "--'--\"" else "%d'%02d\"".format(secPerKm / 60, secPerKm % 60)

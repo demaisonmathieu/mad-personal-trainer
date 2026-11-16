@@ -53,6 +53,9 @@ object CoachPrompt {
             p.targetWeightKg?.let { appendLine("- Poids visé : ${fmt(it)} kg") }
             appendLine("- FC max : $maxHr bpm" + if (p.maxHr == null) " (estimée, formule de Tanaka)" else " (mesurée)")
             p.restingHr?.let { appendLine("- FC de repos : $it bpm") }
+            p.vmaKmh?.let { v ->
+                appendLine("- VMA estimée : ${fmt(v)} km/h (VO2max ≈ ${fmt(com.mathieu.madtrainer.data.Vma.vo2max(v))} ml/kg/min) ; allures en % de VMA : endurance 65-75 %, seuil 85-90 %, VMA 95-105 %")
+            }
             if (!body.isNullOrBlank()) appendLine(body.trim())
             appendLine("- Objectif principal : ${p.goal.label}")
             appendLine("- Niveau : ${p.level.label}")

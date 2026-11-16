@@ -47,6 +47,9 @@ data class UserProfile(
     val hrZoneLows: List<Int>? = null,
     /** Origine des zones personnalisées (« Strava »…) */
     val hrZonesSource: String? = null,
+    /** VMA (km/h) estimée en fin de course et validée par l'utilisateur ; sert au tableau d'allures et au plan. */
+    val vmaKmh: Double? = null,
+    val vmaDate: Long? = null,
 ) {
     val bmi: Double get() = weightKg / ((heightCm / 100.0) * (heightCm / 100.0))
 

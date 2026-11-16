@@ -68,6 +68,8 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0-beta01")
     // Contrôle de la musique (Spotify…) : MediaControllerCompat (aléatoire, lecture d'une URI)
     implementation("androidx.media:media:1.7.0")
+    // Fond de carte OpenStreetMap pour le parcours (sans clé d'API)
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     testImplementation("junit:junit:4.13.2")
 }

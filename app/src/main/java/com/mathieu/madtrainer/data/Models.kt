@@ -65,6 +65,8 @@ data class Sample(
     /** Running */
     val lat: Double? = null,
     val lon: Double? = null,
+    /** Altitude GPS (m) ; bruitée, lissée avant le calcul du dénivelé. */
+    val alt: Double? = null,
     val paceSecPerKm: Int? = null,
     /** Index de l'étape du programme en cours */
     val step: Int? = null,

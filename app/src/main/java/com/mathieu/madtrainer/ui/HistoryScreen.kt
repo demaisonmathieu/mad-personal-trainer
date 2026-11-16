@@ -32,8 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
 import com.mathieu.madtrainer.data.WeekPlanner
+import com.mathieu.madtrainer.data.Elevation
 import com.mathieu.madtrainer.data.SessionRecord
-import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.Sport
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,11 +45,6 @@ import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.mathieu.madtrainer.data.formatDuration
 import com.mathieu.madtrainer.data.formatPace
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -178,6 +173,9 @@ private fun SessionDetail(s: SessionRecord, vm: AppViewModel, onBack: () -> Unit
                             "FC max" to (s.maxHr?.toString() ?: "--"),
                         ),
                     )
+                    Elevation.stats(s.samples)?.let { e ->
+                        StatRow(listOf("D+" to "${e.gainM} m", "D−" to "${e.lossM} m", "Écart alt." to "${e.rangeM} m"))
+                    }
                 } else {
                     StatRow(
                         listOf(
@@ -194,17 +192,10 @@ private fun SessionDetail(s: SessionRecord, vm: AppViewModel, onBack: () -> Unit
         val samples = downsample(s.samples.map { it }, 400)
         if (s.sport == Sport.RUNNING) {
             ChartCard("Vitesse (km/h)", samples.map { it.paceSecPerKm?.let { p -> 3600f / p } }, CadenceColor)
-            if (samples.any { it.lat != null }) RouteCard(samples)
-            // Temps au kilomètre
-            val splits = kmSplits(s)
-            if (splits.isNotEmpty()) {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("Temps au kilomètre", style = MaterialTheme.typography.labelLarge)
-                        splits.forEachIndexed { i, sec -> Text("Km ${i + 1} : ${formatPace(sec)}") }
-                    }
-                }
-            }
+            RouteMapCard(s.samples)
+            ElevationCard(s)
+            KmSplitsCard(s)
+            VmaCard(s, vm)
         } else {
             ChartCard("Puissance (W)", samples.map { it.power?.toFloat() }, PowerColor)
             ChartCard("Cadence (spm)", samples.map { it.cadence?.toFloat() }, CadenceColor)
@@ -222,59 +213,6 @@ private fun <T> downsample(list: List<T>, max: Int): List<T> {
     if (list.size <= max) return list
     val step = list.size.toDouble() / max
     return List(max) { i -> list[(i * step).toInt()] }
-}
-
-/** Temps (s) de chaque kilomètre complet, à partir des échantillons (1/s). */
-private fun kmSplits(s: SessionRecord): List<Int> {
-    val out = mutableListOf<Int>()
-    var nextKm = 1000
-    var lastT = 0
-    for (p in s.samples) {
-        val d = p.distanceM ?: continue
-        if (d >= nextKm) {
-            out += p.t - lastT
-            lastT = p.t
-            nextKm += 1000
-        }
-    }
-    return out
-}
-
-/** Tracé du parcours GPS (projection simple, sans fond de carte). */
-@Composable
-private fun RouteCard(samples: List<Sample>) {
-    val pts = samples.mapNotNull { s -> if (s.lat != null && s.lon != null) s.lat to s.lon else null }
-    if (pts.size < 2) return
-    val color = MaterialTheme.colorScheme.primary
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text("Parcours", style = MaterialTheme.typography.labelLarge)
-            Canvas(Modifier.fillMaxWidth().aspectRatio(1.4f).padding(top = 8.dp)) {
-                val minLat = pts.minOf { it.first }
-                val maxLat = pts.maxOf { it.first }
-                val minLon = pts.minOf { it.second }
-                val maxLon = pts.maxOf { it.second }
-                val cosLat = kotlin.math.cos(Math.toRadians((minLat + maxLat) / 2))
-                val w = ((maxLon - minLon) * cosLat).coerceAtLeast(1e-6)
-                val h = (maxLat - minLat).coerceAtLeast(1e-6)
-                val scale = minOf(size.width / w, size.height / h).toFloat() * 0.92f
-                val ox = (size.width - (w * scale).toFloat()) / 2
-                val oy = (size.height - (h * scale).toFloat()) / 2
-                fun map(p: Pair<Double, Double>) = Offset(
-                    ox + ((p.second - minLon) * cosLat * scale).toFloat(),
-                    oy + ((maxLat - p.first) * scale).toFloat(),
-                )
-                val path = Path()
-                pts.forEachIndexed { i, p ->
-                    val o = map(p)
-                    if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
-                }
-                drawPath(path, color, style = Stroke(width = 6f))
-                drawCircle(androidx.compose.ui.graphics.Color(0xFF2E9E4F), 10f, map(pts.first()))
-                drawCircle(androidx.compose.ui.graphics.Color(0xFFE5395B), 10f, map(pts.last()))
-            }
-        }
-    }
 }
 
 fun sportIcon(sport: Sport): ImageVector =

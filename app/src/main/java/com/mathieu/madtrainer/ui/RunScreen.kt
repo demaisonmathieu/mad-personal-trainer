@@ -145,6 +145,9 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
                 sessions.firstOrNull { it.sport == Sport.RUNNING }?.takeIf { System.currentTimeMillis() - it.startedAt < 6 * 3600_000 }
                     ?.let {
                         RunSummary(it)
+                        ElevationCard(it)
+                        KmSplitsCard(it)
+                        VmaCard(it, vm)
                         SessionReportCard(it, vm)
                     }
                 Button(onClick = { RunTracker.reset() }, modifier = Modifier.fillMaxWidth()) { Text("Nouvelle course") }
@@ -178,6 +181,11 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
                                 Text(workoutSummary(w), style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                    }
+                }
+                profile.vmaKmh?.let { v ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) { PaceTable(v, profile.vmaDate) }
                     }
                 }
             }
@@ -353,6 +361,9 @@ private fun RunSummary(rec: SessionRecord) {
                     "kcal" to rec.kcal.toString(),
                 ),
             )
+            com.mathieu.madtrainer.data.Elevation.stats(rec.samples)?.let { e ->
+                StatRow(listOf("D+" to "${e.gainM} m", "D−" to "${e.lossM} m", "Écart alt." to "${e.rangeM} m"))
+            }
         }
     }
 }

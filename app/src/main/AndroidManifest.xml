@@ -25,6 +25,8 @@
 
     <!-- Mises à jour depuis GitHub -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Carte du parcours (osmdroid vérifie la connexion avant de télécharger les tuiles) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Health Connect : balance Starfit (poids, composition), montre Zepp (FC de repos) -->

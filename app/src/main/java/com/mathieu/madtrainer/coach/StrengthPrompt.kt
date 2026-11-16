@@ -20,6 +20,8 @@ object StrengthPrompt {
         now: Date = Date(),
         /** Identifiants de la banque d'images utilisables pour illustrer les exercices */
         imageIds: List<String> = emptyList(),
+        /** Composition corporelle (balance connectée), lignes « - … » */
+        body: String? = null,
     ): String = buildString {
         val date = SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE).format(now)
         appendLine("Tu es un préparateur physique, spécialiste du renforcement musculaire et de la prévention des blessures chez les sportifs amateurs. Tu es prudent et pédagogue.")
@@ -30,6 +32,7 @@ object StrengthPrompt {
         appendLine("## Profil")
         appendLine("- ${profile.sex.label}, ${profile.age} ans, ${fmt(profile.weightKg)} kg, ${profile.heightCm} cm")
         appendLine("- Niveau sportif : ${profile.level.label}, objectif général : ${profile.goal.label}")
+        if (!body.isNullOrBlank()) appendLine(body.trim())
         if (profile.constraints.isNotBlank()) appendLine("- Contraintes déclarées : ${profile.constraints.trim()}")
         if (profile.runningInfo.isNotBlank()) appendLine("- Repères running : ${profile.runningInfo.trim()}")
         appendLine()

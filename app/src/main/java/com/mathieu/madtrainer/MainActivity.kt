@@ -64,6 +64,8 @@ import com.mathieu.madtrainer.ui.CoachScreen
 import com.mathieu.madtrainer.ui.DeviceScreen
 import com.mathieu.madtrainer.ui.MadTheme
 import com.mathieu.madtrainer.ui.HistoryScreen
+import com.mathieu.madtrainer.ui.BodyScreen
+import androidx.compose.material.icons.filled.MonitorWeight
 import com.mathieu.madtrainer.ui.SessionScreen
 import com.mathieu.madtrainer.ui.UpdateBanner
 import com.mathieu.madtrainer.ui.WorkoutsScreen
@@ -112,6 +114,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
     val run by RunTracker.state.collectAsStateWithLifecycle()
     val sport = settings.sport
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showBody by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -124,10 +127,11 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                     SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
                         Sport.entries.forEachIndexed { i, sp ->
                             SegmentedButton(
-                                selected = sport == sp && !showHistory,
+                                selected = sport == sp && !showHistory && !showBody,
                                 // On ne change pas de mode pendant une course ou une séance en cours
                                 onClick = {
                                     showHistory = false
+                                    showBody = false
                                     if (!run.running && !vm.session.value.running) vm.setSport(sp)
                                 },
                                 shape = SegmentedButtonDefaults.itemShape(i, Sport.entries.size),
@@ -169,8 +173,22 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                             )
                         }
                     }
+                    // Poids et composition corporelle (balance via Health Connect)
+                    IconButton(onClick = {
+                        showBody = !showBody
+                        showHistory = false
+                    }) {
+                        Icon(
+                            Icons.Filled.MonitorWeight,
+                            "Corps",
+                            tint = if (showBody) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     // Historique commun aux deux sports : bouton dédié, hors barre du bas
-                    IconButton(onClick = { showHistory = !showHistory }) {
+                    IconButton(onClick = {
+                        showHistory = !showHistory
+                        showBody = false
+                    }) {
                         Icon(
                             Icons.Filled.History,
                             "Historique",
@@ -184,10 +202,11 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
             NavigationBar {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
-                        selected = tab == t && !showHistory,
+                        selected = tab == t && !showHistory && !showBody,
                         onClick = {
                             tab = t
                             showHistory = false
+                            showBody = false
                         },
                         icon = {
                             Icon(
@@ -210,6 +229,9 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
             if (showHistory) {
                 BackHandler { showHistory = false }
                 HistoryScreen(vm)
+            } else if (showBody) {
+                BackHandler { showBody = false }
+                BodyScreen(vm)
             } else when (tab) {
                 Tab.WEEK -> WeekScreen(
                     vm,

@@ -26,6 +26,8 @@ object CoachPrompt {
         now: Date = Date(),
         otherActivities: String? = null,
         sport: Sport = Sport.ELLIPTICAL,
+        /** Composition corporelle (balance connectée), lignes « - … » */
+        body: String? = null,
     ): String {
         val p = profile
         val run = sport == Sport.RUNNING
@@ -51,6 +53,7 @@ object CoachPrompt {
             p.targetWeightKg?.let { appendLine("- Poids visé : ${fmt(it)} kg") }
             appendLine("- FC max : $maxHr bpm" + if (p.maxHr == null) " (estimée, formule de Tanaka)" else " (mesurée)")
             p.restingHr?.let { appendLine("- FC de repos : $it bpm") }
+            if (!body.isNullOrBlank()) appendLine(body.trim())
             appendLine("- Objectif principal : ${p.goal.label}")
             appendLine("- Niveau : ${p.level.label}")
             appendLine("- Disponibilité : ${p.sessionsPerWeek} séances par semaine, environ ${p.sessionMinutes} min chacune")
@@ -165,9 +168,10 @@ object CoachPrompt {
         otherActivities: String? = null,
         strength: StrengthProfile? = null,
         now: Date = Date(),
+        body: String? = null,
     ): String {
         // On part du prompt elliptique (profil, matériel, historique, Strava) et on remplace la fin
-        val base = build(profile, sessions, equipment, now, otherActivities, Sport.ELLIPTICAL)
+        val base = build(profile, sessions, equipment, now, otherActivities, Sport.ELLIPTICAL, body)
         val head = base.substringBefore("## Ce que j'attends")
             .replace(
                 "Tu es un coach sportif diplômé, spécialisé en entraînement cardio sur vélo elliptique, prudent et bienveillant.",

@@ -48,6 +48,11 @@ class Repository(context: Context) {
     private val _painLogs = MutableStateFlow<List<PainLog>>(emptyList())
     val painLogs: StateFlow<List<PainLog>> = _painLogs
 
+    private val bodyFile = File(context.filesDir, "body.json")
+    /** Pesées et FC de repos importées de Health Connect. */
+    private val _body = MutableStateFlow(BodyCache())
+    val body: StateFlow<BodyCache> = _body
+
     private val _strava = MutableStateFlow(StravaCache())
     val strava: StateFlow<StravaCache> = _strava
 
@@ -82,6 +87,8 @@ class Repository(context: Context) {
             .getOrDefault(emptyList())
         _strava.value = runCatching { json.decodeFromString(StravaCache.serializer(), stravaFile.readText()) }
             .getOrDefault(StravaCache())
+        _body.value = runCatching { json.decodeFromString(BodyCache.serializer(), bodyFile.readText()) }
+            .getOrDefault(BodyCache())
         _globalPlan.value = runCatching { json.decodeFromString(SavedPlan.serializer(), globalPlanFile.readText()) }.getOrNull()
         _done.value = runCatching { json.decodeFromString(ListSerializer(String.serializer()), doneFile.readText()).toSet() }
             .getOrDefault(emptySet())
@@ -159,6 +166,11 @@ class Repository(context: Context) {
     suspend fun saveStrava(c: StravaCache) = withContext(Dispatchers.IO) {
         stravaFile.writeText(json.encodeToString(StravaCache.serializer(), c))
         _strava.value = c
+    }
+
+    suspend fun saveBody(c: BodyCache) = withContext(Dispatchers.IO) {
+        bodyFile.writeText(json.encodeToString(BodyCache.serializer(), c))
+        _body.value = c
     }
 
     suspend fun saveProfile(p: UserProfile) = withContext(Dispatchers.IO) {

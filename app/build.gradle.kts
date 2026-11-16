@@ -64,6 +64,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // Health Connect (1.1.0 stable exige compileSdk 36 / AGP 8.9)
+    implementation("androidx.health.connect:connect-client:1.1.0-beta01")
 
     testImplementation("junit:junit:4.13.2")
 }

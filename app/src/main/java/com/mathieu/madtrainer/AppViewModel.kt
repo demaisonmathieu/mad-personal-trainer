@@ -45,6 +45,11 @@ import com.mathieu.madtrainer.data.SessionReport
 import com.mathieu.madtrainer.data.VoiceCoach
 import com.mathieu.madtrainer.data.WeekPlanner
 import com.mathieu.madtrainer.run.RunTracker
+import com.mathieu.madtrainer.data.BodyCache
+import com.mathieu.madtrainer.data.BodyStats
+import com.mathieu.madtrainer.health.HealthAvailability
+import com.mathieu.madtrainer.health.HealthConnectSource
+import com.mathieu.madtrainer.health.sourceLabel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,6 +68,17 @@ sealed interface CoachState {
     /** [truncated] : réponse coupée, seules les séances complètes ont été importées. */
     data class Done(val workouts: Int, val truncated: Boolean = false) : CoachState
     data class Error(val message: String) : CoachState
+}
+
+/** État de la liaison Health Connect (balance Starfit, montre Zepp). */
+data class HealthUi(
+    val availability: HealthAvailability? = null,
+    val granted: Set<String> = emptySet(),
+    val syncing: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+) {
+    val connected: Boolean get() = availability == HealthAvailability.AVAILABLE && granted.isNotEmpty()
 }
 
 sealed interface StravaState {
@@ -143,8 +159,64 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Plan commun aux deux sports (+ jours de renfo réservés)
         return CoachPrompt.buildGlobal(
             repo.profile.value, repo.sessions.value, equipment(),
-            otherActivities = strava, strength = repo.strengthProfile.value,
+            otherActivities = strava, strength = repo.strengthProfile.value, body = bodySummary(),
         )
+    }
+
+    // ------------------------------------------------------------ Health Connect (balance, montre)
+
+    val health: HealthConnectSource by lazy { HealthConnectSource(getApplication<Application>()) }
+    private val _healthUi = MutableStateFlow(HealthUi())
+    val healthUi: StateFlow<HealthUi> = _healthUi
+
+    private fun bodySummary(): String? = BodyStats.describe(repo.body.value)
+
+    /** Vérifie la disponibilité et les autorisations, puis importe les mesures si l'accès est donné. */
+    fun refreshHealth() = viewModelScope.launch {
+        val availability = runCatching { health.availability() }.getOrDefault(HealthAvailability.NOT_INSTALLED)
+        if (availability != HealthAvailability.AVAILABLE) {
+            _healthUi.value = HealthUi(availability = availability)
+            return@launch
+        }
+        val granted = runCatching { health.grantedPermissions() }.getOrDefault(emptySet())
+        _healthUi.value = _healthUi.value.copy(availability = availability, granted = granted, error = null)
+        if (granted.isNotEmpty()) syncBody()
+    }
+
+    private suspend fun syncBody() {
+        _healthUi.value = _healthUi.value.copy(syncing = true, error = null)
+        runCatching { health.read() }.fold(
+            onSuccess = { data ->
+                val measures = BodyStats.group(data.points)
+                val height = BodyStats.latestHeightCm(data.points)
+                val cache = BodyCache(measures, data.restingHr.sortedBy { it.time }, height, System.currentTimeMillis())
+                repo.saveBody(cache)
+                _healthUi.value = _healthUi.value.copy(syncing = false, message = applyBodyToProfile(cache))
+            },
+            onFailure = { e ->
+                _healthUi.value = _healthUi.value.copy(syncing = false, error = e.message ?: e.javaClass.simpleName)
+            },
+        )
+    }
+
+    /** Reporte la dernière pesée, la taille et la FC de repos dans le profil (kcal, coach IA). */
+    private suspend fun applyBodyToProfile(cache: BodyCache): String? {
+        val p = repo.profile.value
+        val last = BodyStats.latest(cache.measures)
+        val weight = last?.weightKg?.let { Math.round(it * 10) / 10.0 }
+        val resting = BodyStats.recentRestingHr(cache.restingHr, System.currentTimeMillis())
+        val updated = p.copy(
+            weightKg = weight?.takeIf { it in 30.0..250.0 } ?: p.weightKg,
+            heightCm = cache.heightCm?.takeIf { it in 120..230 } ?: p.heightCm,
+            restingHr = resting?.takeIf { it in 30..120 } ?: p.restingHr,
+        )
+        if (updated == p) return null
+        repo.saveProfile(updated)
+        val parts = mutableListOf<String>()
+        if (updated.weightKg != p.weightKg) parts += "poids ${BodyStats.fmt(updated.weightKg)} kg (${sourceLabel(last?.source ?: "")})"
+        if (updated.heightCm != p.heightCm) parts += "taille ${updated.heightCm} cm"
+        if (updated.restingHr != p.restingHr) parts += "FC de repos ${updated.restingHr} bpm"
+        return "Profil mis à jour : " + parts.joinToString(", ")
     }
 
     // ------------------------------------------------------------ Strava
@@ -300,7 +372,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun buildStrengthPrompt(): String {
         val strava = if (settingsStore.settings.value.includeStrava) StravaSummary.describe(repo.strava.value) else null
         return StrengthPrompt.build(repo.profile.value, repo.strengthProfile.value, repo.sessions.value, repo.painLogs.value, strava,
-            imageIds = exerciseCatalog.idsForPrompt(repo.strengthProfile.value.equipment),
+            imageIds = exerciseCatalog.idsForPrompt(repo.strengthProfile.value.equipment), body = bodySummary(),
         )
     }
 
@@ -466,7 +538,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // On n'attend le vélo que pendant la courte phase de découverte des services (quelques secondes)
         hr.isBikeBusy = { bike.state.value == ConnState.DISCOVERING }
-        viewModelScope.launch { repo.load() }
+        viewModelScope.launch {
+            repo.load()
+            refreshHealth()
+        }
         checkForUpdate()
         reconnectHeartRate()
     }
@@ -673,6 +748,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             appendLine("- Objectif : ${p.goal.label}, niveau : ${p.level.label}, ${p.sessionsPerWeek} séances par semaine")
             if (p.constraints.isNotBlank()) appendLine("- Contraintes : ${p.constraints.trim()}")
             if (p.runningInfo.isNotBlank()) appendLine("- Repères running : ${p.runningInfo.trim()}")
+            bodySummary()?.let { appendLine(it) }
         }
         val planText = repo.globalPlan.value?.let { plan ->
             val ws = repo.workouts.value.filter { it.id in plan.workoutIds }

@@ -110,5 +110,9 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+        <!-- Bouton « +250 ml » de la notification d'hydratation -->
+        <receiver
+            android:name=".health.HydrationReceiver"
+            android:exported="false" />
     </application>
 </manifest>

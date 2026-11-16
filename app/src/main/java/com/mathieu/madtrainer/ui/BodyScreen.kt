@@ -178,6 +178,7 @@ fun BodyScreen(vm: AppViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            item { HydrationCard() }
             item { NutritionCard(nutrition) }
         } else {
             // Dernière pesée
@@ -232,6 +233,7 @@ fun BodyScreen(vm: AppViewModel) {
                 item { TrendCard("Masse maigre", "kg", cache.measures, period, now, Color(0xFF81C784)) { it.leanMassKg } }
             }
 
+            item { HydrationCard() }
             item { NutritionCard(nutrition) }
 
             // Historique des pesées

@@ -58,6 +58,8 @@ import com.mathieu.madtrainer.data.SessionExtension
 import com.mathieu.madtrainer.data.TrendReport
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.data.Vma
+import com.mathieu.madtrainer.data.HydrationStore
+import com.mathieu.madtrainer.health.HydrationReminder
 import com.mathieu.madtrainer.data.VmaEstimate
 import com.mathieu.madtrainer.health.HealthAvailability
 import com.mathieu.madtrainer.health.HealthConnectSource
@@ -72,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -639,6 +642,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RunTracker.onStarted = { startMusicIfWanted() }
         RunTracker.continueAfterEnd = { settingsStore.settings.value.continueAfterEnd }
         MusicPlayer.init(app)
+        // Hydratation : objectif recalculé selon le poids et le sport du jour, vérification périodique en arrière-plan
+        HydrationStore.init(app)
+        runCatching { HydrationReminder.schedule(app) }
+        viewModelScope.launch {
+            combine(repo.profile, repo.sessions) { p, sessions ->
+                val today = java.time.LocalDate.now()
+                val zone = java.time.ZoneId.systemDefault()
+                val min = sessions.filter { java.time.Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() == today }
+                    .sumOf { it.durationSec } / 60
+                p.weightKg to min
+            }.collect { (w, min) -> HydrationStore.setContext(w, min) }
+        }
     }
 
     init {

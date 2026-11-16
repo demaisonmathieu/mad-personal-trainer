@@ -70,6 +70,8 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     // Fond de carte OpenStreetMap pour le parcours (sans clé d'API)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    // Rappels d'hydratation en arrière-plan
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     testImplementation("junit:junit:4.13.2")
 }

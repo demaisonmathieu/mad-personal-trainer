@@ -50,6 +50,11 @@ import com.mathieu.madtrainer.coach.NutritionPlan
 import com.mathieu.madtrainer.coach.NutritionPlanner
 import com.mathieu.madtrainer.coach.PlannerInput
 import com.mathieu.madtrainer.coach.RulePlanner
+import com.mathieu.madtrainer.coach.AdjustAction
+import com.mathieu.madtrainer.coach.PlanAdjuster
+import com.mathieu.madtrainer.coach.PlanAdjustment
+import com.mathieu.madtrainer.data.TrainingLoad
+import com.mathieu.madtrainer.data.TrendReport
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.health.HealthAvailability
 import com.mathieu.madtrainer.health.HealthConnectSource
@@ -355,6 +360,53 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.saveGlobalPlan(SavedPlan(System.currentTimeMillis(), plan), workouts)
             _coach.value = CoachState.Done(workouts.size)
+        }
+    }
+
+    // ------------------------------------------------------------ tendances et ajustement du plan (sans IA)
+
+    fun trendReport(): TrendReport = TrainingLoad.report(repo.sessions.value, repo.profile.value.hrZones, repo.body.value)
+
+    /** Séances du plan commun encore à faire : reste de la semaine en cours (à partir d'aujourd'hui) et semaine suivante. */
+    private fun upcomingPlanWorkouts(now: Long): List<Workout> {
+        val plan = repo.globalPlan.value ?: return emptyList()
+        val ws = repo.workouts.value.filter { it.id in plan.workoutIds }
+        val maxWeek = ws.maxOfOrNull { it.planWeek ?: 1 } ?: 1
+        val week = WeekPlanner.currentWeek(plan.createdAt, now, maxWeek)
+        val today = ((now - WeekPlanner.weekStart(plan.createdAt, week)) / (24 * 3600_000L)).toInt()
+        val done = repo.done.value
+        return ws.filter { w ->
+            w.id !in done && when (w.planWeek ?: 1) {
+                week -> WeekPlanner.dayIndex(w.planDay).let { it < 0 || it >= today }
+                week + 1 -> true
+                else -> false
+            }
+        }
+    }
+
+    /** Proposition d'ajustement (null sans plan commun). */
+    fun planAdjustment(trend: TrendReport = trendReport(), now: Long = System.currentTimeMillis()): PlanAdjustment? {
+        val plan = repo.globalPlan.value ?: return null
+        val ws = repo.workouts.value.filter { it.id in plan.workoutIds }
+        val maxWeek = ws.maxOfOrNull { it.planWeek ?: 1 } ?: 1
+        val week = WeekPlanner.currentWeek(plan.createdAt, now, maxWeek)
+        val lastStart = WeekPlanner.weekStart(plan.createdAt, week - 1)
+        val planned = if (week > 1) ws.count { (it.planWeek ?: 1) == week - 1 } else null
+        val doneLast = repo.sessions.value.count { it.startedAt >= lastStart && it.startedAt < lastStart + WeekPlanner.WEEK_MS }
+        val signals = PlanAdjuster.signals(repo.sessions.value, repo.profile.value.hrZones, now)
+        return PlanAdjuster.decide(trend, signals, planned, doneLast)
+    }
+
+    fun planAdjustedThisWeek(): Boolean = settingsStore.settings.value.lastPlanAdjust == WeekPlanner.mondayOf(System.currentTimeMillis())
+
+    /** Applique l'ajustement aux séances à venir (une fois par semaine). */
+    fun applyPlanAdjustment(action: AdjustAction) {
+        if (action == AdjustAction.KEEP) return
+        val now = System.currentTimeMillis()
+        val targets = upcomingPlanWorkouts(now)
+        viewModelScope.launch {
+            targets.forEach { repo.saveWorkout(PlanAdjuster.apply(it, action)) }
+            settingsStore.update { it.copy(lastPlanAdjust = WeekPlanner.mondayOf(now)) }
         }
     }
 

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.data.WeekPlanner
 import com.mathieu.madtrainer.data.SessionRecord
 import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.Sport
@@ -59,6 +60,15 @@ private val dateFmt = SimpleDateFormat("EEE d MMM yyyy · HH:mm", Locale.FRANCE)
 @Composable
 fun HistoryScreen(vm: AppViewModel) {
     val allSessions by vm.repo.sessions.collectAsStateWithLifecycle()
+    val body by vm.repo.body.collectAsStateWithLifecycle()
+    val profile by vm.repo.profile.collectAsStateWithLifecycle()
+    val globalPlan by vm.repo.globalPlan.collectAsStateWithLifecycle()
+    val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
+    val done by vm.repo.done.collectAsStateWithLifecycle()
+    val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+    val trend = remember(allSessions, body, profile) { vm.trendReport() }
+    val adjustment = remember(trend, globalPlan, workouts, done) { vm.planAdjustment(trend) }
+    val adjustedThisWeek = settings.lastPlanAdjust == WeekPlanner.mondayOf(System.currentTimeMillis())
     // Historique commun : tous les sports par défaut, filtre optionnel
     var filter by remember { mutableStateOf<Sport?>(null) }
     val sessions = allSessions.filter { filter == null || it.sport == filter }
@@ -111,6 +121,8 @@ fun HistoryScreen(vm: AppViewModel) {
             }
           }
         }
+        if (allSessions.isNotEmpty()) item { TrendsCard(trend) }
+        adjustment?.let { adj -> item { PlanAdjustCard(vm, adj, adjustedThisWeek) } }
         items(sessions, key = { it.id }) { s ->
             Card(Modifier.fillMaxWidth().clickable { selectedId = s.id }) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {

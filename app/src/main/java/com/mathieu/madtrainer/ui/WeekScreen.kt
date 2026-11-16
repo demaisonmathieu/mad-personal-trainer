@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.coach.AdjustAction
 import com.mathieu.madtrainer.coach.StrengthPlayer
 import com.mathieu.madtrainer.coach.StrengthSession
 import com.mathieu.madtrainer.data.Sport
@@ -120,6 +121,11 @@ fun WeekScreen(
     val done by vm.repo.done.collectAsStateWithLifecycle()
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
     val sp by vm.repo.strengthProfile.collectAsStateWithLifecycle()
+    val body by vm.repo.body.collectAsStateWithLifecycle()
+    val settings by vm.settingsStore.settings.collectAsStateWithLifecycle()
+    // Ajustement du plan proposé d'après les dernières séances (affiché seulement s'il y a quelque chose à faire)
+    val adjustment = remember(sessions, body, profile, plan, workouts, done) { vm.planAdjustment() }
+    val adjustedThisWeek = settings.lastPlanAdjust == WeekPlanner.mondayOf(System.currentTimeMillis())
 
     var editingWorkout by remember { mutableStateOf<Workout?>(null) }
     var editingStrength by remember { mutableStateOf<Pair<Int, StrengthSession>?>(null) }
@@ -188,6 +194,7 @@ fun WeekScreen(
                 OutlinedButton(onClick = { confirmShift = -1 }, modifier = Modifier.weight(1f)) { Text("Avancer d'1 sem.", maxLines = 1) }
                 OutlinedButton(onClick = { confirmShift = 1 }, modifier = Modifier.weight(1f)) { Text("Reporter d'1 sem.", maxLines = 1) }
             }
+            adjustment?.takeIf { it.action != AdjustAction.KEEP && !adjustedThisWeek }?.let { PlanAdjustCard(vm, it, adjustedThisWeek) }
 
             val sessionsInWeek = sessions.filter { it.startedAt in start until end }
             val logsInWeek = painLogs.filter { it.date in start until end }

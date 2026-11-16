@@ -171,6 +171,11 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                                 trailingIcon = { Checkbox(checked = settings.hrAlerts, onCheckedChange = null) },
                                 onClick = { vm.setHrAlerts(!settings.hrAlerts) },
                             )
+                            DropdownMenuItem(
+                                text = { Text("Continuer en libre après la fin du programme") },
+                                trailingIcon = { Checkbox(checked = settings.continueAfterEnd, onCheckedChange = null) },
+                                onClick = { vm.settingsStore.update { it.copy(continueAfterEnd = !settings.continueAfterEnd) } },
+                            )
                         }
                     }
                     // Poids et composition corporelle (balance via Health Connect)

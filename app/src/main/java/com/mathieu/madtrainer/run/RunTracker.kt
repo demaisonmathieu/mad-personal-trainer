@@ -1,5 +1,6 @@
 package com.mathieu.madtrainer.run
 
+import com.mathieu.madtrainer.data.SessionExtension
 import com.mathieu.madtrainer.data.HrZones
 import com.mathieu.madtrainer.data.VoiceCoach
 import android.annotation.SuppressLint
@@ -123,6 +124,8 @@ object RunTracker {
     /** Coach vocal activé (réglage global) */
     var voiceEnabled: () -> Boolean = { true }
     var hrAlertsEnabled: () -> Boolean = { true }
+    /** À la fin du programme : continuer en libre plutôt que d'arrêter. */
+    var continueAfterEnd: () -> Boolean = { true }
 
     fun init(context: Context) {
         if (::app.isInitialized) return
@@ -306,6 +309,26 @@ object RunTracker {
         advanceStep(s, w)
     }
 
+    /** +5 min (ou +1 km) sur l'étape en cours ; pendant le retour au calme, 5 min d'endurance en plus. */
+    fun extendStep() {
+        val s = _state.value
+        val w = s.workout ?: return
+        if (!s.running) return
+        val ext = SessionExtension.extend(w, s.stepIndex, s.stepElapsed, s.stepDistance.roundToInt())
+        if (ext.workout == w) return
+        if (ext.newStep) {
+            oneMinuteWarned = false
+            distanceWarned = false
+            lastGuidanceAt = System.currentTimeMillis()
+            _state.value = s.copy(workout = ext.workout, stepIndex = ext.index, stepElapsed = 0, stepDistance = 0.0)
+        } else {
+            oneMinuteWarned = false
+            _state.value = s.copy(workout = ext.workout)
+        }
+        vibrate(1)
+        speak(SessionExtension.announceExtra(ext.newStep))
+    }
+
     fun stop(save: Boolean) {
         val s = _state.value
         if (!s.running) return
@@ -420,7 +443,14 @@ object RunTracker {
     private fun advanceStep(s: RunState, w: Workout) {
         val next = s.stepIndex + 1
         if (next >= w.steps.size) {
-            stop(save = true)
+            if (continueAfterEnd() && !SessionExtension.isFreeExtension(w.steps.lastOrNull())) {
+                // Programme fini : on continue en libre, l'utilisateur arrête quand il veut
+                _state.value = s.copy(workout = SessionExtension.continueFree(w), stepIndex = next, stepElapsed = 0, stepDistance = 0.0)
+                vibrate(3)
+                speak(SessionExtension.announceFree())
+            } else {
+                stop(save = true)
+            }
             return
         }
         oneMinuteWarned = false
@@ -453,7 +483,7 @@ object RunTracker {
             samples = s.samples,
             sport = Sport.RUNNING,
             avgPaceSecPerKm = RunEngine.pace(s.distanceM, s.elapsed.toDouble()),
-            steps = s.workout?.steps.orEmpty(),
+            steps = SessionExtension.trimFree(s.workout?.steps.orEmpty(), s.stepElapsed),
         )
     }
 

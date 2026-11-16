@@ -36,6 +36,8 @@ data class Settings(
     val musicShuffle: Boolean = true,
     /** Lundi (0 h) de la semaine où le plan a été ajusté pour la dernière fois (un ajustement par semaine). */
     val lastPlanAdjust: Long = 0,
+    /** À la fin du programme, continuer en libre au lieu d'arrêter la séance. */
+    val continueAfterEnd: Boolean = true,
 ) {
     val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
 }
@@ -66,6 +68,7 @@ class SettingsStore(context: Context) {
         musicAutoStart = prefs.getBoolean("musicAutoStart", false),
         musicShuffle = prefs.getBoolean("musicShuffle", true),
         lastPlanAdjust = prefs.getLong("lastPlanAdjust", 0),
+        continueAfterEnd = prefs.getBoolean("continueAfterEnd", true),
         sport = runCatching { Sport.valueOf(prefs.getString("sport", "ELLIPTICAL")!!) }.getOrDefault(Sport.ELLIPTICAL),
     )
 
@@ -93,6 +96,7 @@ class SettingsStore(context: Context) {
             .putBoolean("musicAutoStart", s.musicAutoStart)
             .putBoolean("musicShuffle", s.musicShuffle)
             .putLong("lastPlanAdjust", s.lastPlanAdjust)
+            .putBoolean("continueAfterEnd", s.continueAfterEnd)
             .apply()
         _settings.value = s
     }

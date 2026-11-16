@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import com.mathieu.madtrainer.data.SessionExtension
+import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
@@ -269,14 +271,18 @@ private fun RunningView(run: RunState, maxHr: HrZones) {
                             Text(RunEngine.targetText(step, maxHr))
                         }
                         Text(
-                            RunEngine.stepRemainingText(step, run.stepElapsed, run.stepDistance),
+                            // Prolongation libre : temps écoulé au lieu d'un compte à rebours
+                            if (SessionExtension.isFreeExtension(step)) "+" + formatDuration(run.stepElapsed)
+                            else RunEngine.stepRemainingText(step, run.stepElapsed, run.stepDistance),
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                         )
                     }
-                    val progress = step.distanceM?.let { (run.stepDistance / it).toFloat() }
-                        ?: (run.stepElapsed.toFloat() / step.durationSec.coerceAtLeast(1))
-                    LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                    if (!SessionExtension.isFreeExtension(step)) {
+                        val progress = step.distanceM?.let { (run.stepDistance / it).toFloat() }
+                            ?: (run.stepElapsed.toFloat() / step.durationSec.coerceAtLeast(1))
+                        LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                    }
                     w.steps.getOrNull(run.stepIndex + 1)?.let { n ->
                         Text(
                             "Ensuite : ${n.name} — ${RunEngine.stepLengthText(n)}, ${RunEngine.targetText(n, maxHr)}",
@@ -301,6 +307,10 @@ private fun RunningView(run: RunState, maxHr: HrZones) {
                 Text(if (run.paused) " Reprendre" else " Pause")
             }
             if (w != null) {
+                // « Je me sens bien » : +5 min ou +1 km (masqué pendant la prolongation libre)
+                if (!SessionExtension.isFreeExtension(run.step)) {
+                    OutlinedButton(onClick = { RunTracker.extendStep() }) { Icon(Icons.Filled.MoreTime, "Prolonger") }
+                }
                 OutlinedButton(onClick = { RunTracker.skipStep() }) { Icon(Icons.Filled.SkipNext, "Étape suivante") }
             }
             Button(onClick = { confirmStop = true }, modifier = Modifier.weight(1f)) {

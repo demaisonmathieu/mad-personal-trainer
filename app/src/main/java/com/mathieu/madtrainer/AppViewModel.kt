@@ -54,6 +54,7 @@ import com.mathieu.madtrainer.coach.AdjustAction
 import com.mathieu.madtrainer.coach.PlanAdjuster
 import com.mathieu.madtrainer.coach.PlanAdjustment
 import com.mathieu.madtrainer.data.TrainingLoad
+import com.mathieu.madtrainer.data.SessionExtension
 import com.mathieu.madtrainer.data.TrendReport
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.health.HealthAvailability
@@ -624,6 +625,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RunTracker.weightKg = { repo.profile.value.weightKg }
         RunTracker.onFinished = { rec -> appScope.launch { repo.saveSession(rec) } }
         RunTracker.onStarted = { startMusicIfWanted() }
+        RunTracker.continueAfterEnd = { settingsStore.settings.value.continueAfterEnd }
         MusicPlayer.init(app)
     }
 
@@ -749,6 +751,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _session.value = s.copy(elapsed = nextStart - 1)
     }
 
+    /** +5 min sur l'étape en cours ; pendant le retour au calme, 5 min d'endurance en plus puis retour au calme. */
+    fun extendStep() {
+        val s = _session.value
+        if (!s.running) return
+        val w = s.workout ?: return
+        val p = s.position ?: return
+        val ext = SessionExtension.extend(w, p.index, p.stepElapsed)
+        if (ext.workout == w) return
+        _session.value = s.copy(workout = ext.workout, position = WorkoutEngine.position(ext.workout, s.elapsed))
+        if (ext.newStep) applyStep(ext.index, ext.workout.steps[ext.index], announce = false)
+        RunTracker.vibrate(1)
+        RunTracker.speak(SessionExtension.announceExtra(ext.newStep))
+    }
+
     fun stopSession(save: Boolean) {
         val s = _session.value
         if (!s.running) return
@@ -757,7 +773,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         bike.stopMachine()
         _session.value = LiveSession()
         if (save && s.elapsed >= 10) {
-            val rec = WorkoutEngine.summarize(s.startedAt, s.elapsed, s.workout?.name, s.samples, s.workout?.steps.orEmpty())
+            val planned = s.workout?.steps.orEmpty()
+            // Prolongation libre : ramenée à sa durée réelle
+            val steps = SessionExtension.trimFree(planned, s.elapsed - planned.dropLast(1).sumOf { it.durationSec })
+            val rec = WorkoutEngine.summarize(s.startedAt, s.elapsed, s.workout?.name, s.samples, steps)
             _lastFinished.value = rec
             RunTracker.speak(
                 "Séance terminée. ${com.mathieu.madtrainer.data.spokenDuration(s.elapsed)}" +
@@ -788,9 +807,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             kcal = m.totalKcal,
         )
         var pos: StepPosition? = null
-        val w = s.workout
+        var w = s.workout
         if (w != null) {
             pos = WorkoutEngine.position(w, e)
+            if (pos.finished && settingsStore.settings.value.continueAfterEnd && !SessionExtension.isFreeExtension(w.steps.lastOrNull())) {
+                // Programme fini : on continue en libre (résistance inchangée), l'utilisateur arrête quand il veut
+                w = SessionExtension.continueFree(w)
+                pos = WorkoutEngine.position(w, e)
+                appliedStep = pos.index
+                RunTracker.vibrate(3)
+                RunTracker.speak(SessionExtension.announceFree())
+            }
             if (pos.finished) {
                 _session.value = s.copy(elapsed = e, position = pos, samples = s.samples + sample)
                 stopSession(save = true)
@@ -817,7 +844,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         if (w == null) checkHrAlarm(e, m.heartRate, null, emptyList())
-        _session.value = s.copy(elapsed = e, position = pos, samples = s.samples + sample)
+        _session.value = s.copy(elapsed = e, position = pos, samples = s.samples + sample, workout = w)
     }
 
     private val hrAlarm = VoiceCoach.HrAlarm()

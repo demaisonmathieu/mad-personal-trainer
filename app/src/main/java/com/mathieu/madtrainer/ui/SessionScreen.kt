@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import com.mathieu.madtrainer.data.SessionExtension
+import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Favorite
@@ -187,19 +189,32 @@ private fun WorkoutProgress(session: LiveSession) {
                     )
                     Text(stepTargetText(step), style = MaterialTheme.typography.bodyMedium)
                 }
-                Text(formatDuration(p.stepRemaining), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+                val free = SessionExtension.isFreeExtension(step)
+                Text(
+                    if (free) "+" + formatDuration(p.stepElapsed) else formatDuration(p.stepRemaining),
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                )
             }
-            LinearProgressIndicator(
-                progress = { if (step.durationSec > 0) p.stepElapsed.toFloat() / step.durationSec else 1f },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            )
-            WorkoutProfile(w, Modifier.fillMaxWidth().height(48.dp), currentIndex = p.index, progressSec = session.elapsed)
-            Text(
-                "Étape ${p.index + 1}/${w.steps.size} · reste ${formatDuration(w.totalSec - session.elapsed)}" +
-                    (next?.let { " · ensuite : ${it.name.ifBlank { "étape" }} (${stepTargetText(it)})" } ?: ""),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 6.dp),
-            )
+            if (SessionExtension.isFreeExtension(step)) {
+                Text(
+                    "Programme terminé · prolongation libre : appuie sur Terminer quand tu veux.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            } else {
+                LinearProgressIndicator(
+                    progress = { if (step.durationSec > 0) p.stepElapsed.toFloat() / step.durationSec else 1f },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
+                WorkoutProfile(w, Modifier.fillMaxWidth().height(48.dp), currentIndex = p.index, progressSec = session.elapsed)
+                Text(
+                    "Étape ${p.index + 1}/${w.steps.size} · reste ${formatDuration(w.totalSec - session.elapsed)}" +
+                        (next?.let { " · ensuite : ${it.name.ifBlank { "étape" }} (${stepTargetText(it)})" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
         }
     }
 }
@@ -279,6 +294,13 @@ private fun RunningButtons(vm: AppViewModel, session: LiveSession) {
             Text(if (session.paused) " Reprendre" else " Pause")
         }
         if (session.workout != null) {
+            // « Je me sens bien » : +5 min (masqué pendant la prolongation libre)
+            val current = session.position?.let { session.workout?.steps?.getOrNull(it.index) }
+            if (!SessionExtension.isFreeExtension(current)) {
+                OutlinedButton(onClick = { vm.extendStep() }) {
+                    Icon(Icons.Filled.MoreTime, "Prolonger de 5 minutes")
+                }
+            }
             OutlinedButton(onClick = { vm.skipStep() }) {
                 Icon(Icons.Filled.SkipNext, "Étape suivante")
             }

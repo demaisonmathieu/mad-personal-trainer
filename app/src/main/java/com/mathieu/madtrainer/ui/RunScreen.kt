@@ -153,9 +153,10 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
             run.finished -> {
                 sessions.firstOrNull { it.sport == Sport.RUNNING }?.takeIf { System.currentTimeMillis() - it.startedAt < 6 * 3600_000 }
                     ?.let {
+                        RouteMapCard(it.samples)
                         RunSummary(it)
                         ElevationCard(it)
-                        KmSplitsCard(it)
+                        KmSplitsCard(it, maxHr)
                         VmaCard(it, vm)
                         SessionReportCard(it, vm)
                     }
@@ -463,25 +464,40 @@ fun RoundButton(
 
 @Composable
 private fun RunSummary(rec: SessionRecord) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Course enregistrée", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            StatRow(
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column {
+                Text("COURSE ENREGISTRÉE", style = MaterialTheme.typography.labelMedium, color = Night.AccentText, fontWeight = FontWeight.SemiBold)
+                Text(rec.workoutName ?: "Course libre", style = MaterialTheme.typography.headlineSmall)
+            }
+            val elev = com.mathieu.madtrainer.data.Elevation.stats(rec.samples)
+            SummaryGrid(
                 listOf(
-                    "Distance" to "%.2f km".format(rec.distanceM / 1000.0),
+                    "Distance" to "%.2f km".format(rec.distanceM / 1000.0).replace('.', ','),
                     "Temps" to formatDuration(rec.durationSec),
                     "Allure" to formatPace(rec.avgPaceSecPerKm),
-                ),
-            )
-            StatRow(
-                listOf(
                     "FC moy." to (rec.avgHr?.toString() ?: "--"),
-                    "FC max" to (rec.maxHr?.toString() ?: "--"),
+                    "D+" to (elev?.let { "${it.gainM} m" } ?: "--"),
                     "kcal" to rec.kcal.toString(),
                 ),
             )
-            com.mathieu.madtrainer.data.Elevation.stats(rec.samples)?.let { e ->
-                StatRow(listOf("D+" to "${e.gainM} m", "D−" to "${e.lossM} m", "Écart alt." to "${e.rangeM} m"))
+        }
+    }
+}
+
+/** Grille de chiffres clés, 3 par ligne. */
+@Composable
+fun SummaryGrid(items: List<Pair<String, String>>) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items.chunked(3).forEach { row ->
+            Row {
+                row.forEach { (label, value) ->
+                    Column(Modifier.weight(1f)) {
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = Night.Muted)
+                        Text(value, fontFamily = Display, fontSize = 22.sp, fontWeight = FontWeight.Bold, style = NumberStyle, maxLines = 1)
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

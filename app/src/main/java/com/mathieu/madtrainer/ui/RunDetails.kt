@@ -20,7 +20,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
 import com.mathieu.madtrainer.data.Elevation
+import com.mathieu.madtrainer.data.HrZones
 import com.mathieu.madtrainer.data.Sample
 import com.mathieu.madtrainer.data.SessionRecord
 import com.mathieu.madtrainer.data.formatDistance
@@ -104,7 +110,7 @@ private fun dot(map: MapView, p: GeoPoint, radiusM: Double, color: Int) = Polygo
 
 /** Temps de chaque kilomètre, temps cumulé au passage et allure (dernier morceau incomplet compris). */
 @Composable
-fun KmSplitsCard(rec: SessionRecord) {
+fun KmSplitsCard(rec: SessionRecord, zones: HrZones? = null) {
     val splits = remember(rec.id, rec.samples.size) { kmSplits(rec.samples) }
     if (splits.isEmpty()) return
     // Variation d'altitude de chaque morceau (altitude lissée au début et à la fin)
@@ -119,11 +125,20 @@ fun KmSplitsCard(rec: SessionRecord) {
         }
     }
     val best = splits.filter { it.distanceM == 1000 }.minOfOrNull { it.sec }
+    val fastest = splits.minOf { it.paceSecKm }.coerceAtLeast(1)
+    // Zone cardio moyenne de chaque morceau (couleur de la barre)
+    val splitZones = remember(rec.id, rec.samples.size, zones) {
+        splits.map { sp ->
+            val hrs = rec.samples.filter { it.t in (sp.cumulativeSec - sp.sec)..sp.cumulativeSec }.mapNotNull { it.hr }.filter { it > 40 }
+            if (zones == null || hrs.isEmpty()) null else zones.zoneOf(hrs.average().roundToInt())
+        }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("Temps au kilomètre", style = MaterialTheme.typography.labelLarge)
             Row {
                 Text("Km", Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.weight(1.2f))
                 Text("Temps", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
                 Text("Allure /km", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
                 if (climbs != null) Text("Dén.", Modifier.weight(0.8f), style = MaterialTheme.typography.labelSmall)
@@ -131,8 +146,15 @@ fun KmSplitsCard(rec: SessionRecord) {
             }
             splits.forEachIndexed { i, s ->
                 val bold = if (s.distanceM == 1000 && s.sec == best) FontWeight.Bold else FontWeight.Normal
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (s.distanceM == 1000) "${s.km}" else formatDistance(s.distanceM.toDouble()), Modifier.weight(0.8f), fontWeight = bold)
+                    // Barre : longueur = vitesse relative au km le plus rapide, couleur = zone cardio moyenne
+                    Box(Modifier.weight(1.2f).padding(end = 8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Night.Line)) {
+                        Box(
+                            Modifier.fillMaxWidth((fastest.toFloat() / s.paceSecKm.coerceAtLeast(1)).coerceIn(0.1f, 1f)).height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)).background(splitZones[i]?.let { zoneColor(it) } ?: Night.Accent),
+                        )
+                    }
                     Text(formatDuration(s.sec), Modifier.weight(1f), fontWeight = bold)
                     Text(formatPace(s.paceSecKm), Modifier.weight(1f), fontWeight = bold)
                     if (climbs != null) Text(climbs[i]?.let { (if (it > 0) "+" else "") + "$it m" } ?: "--", Modifier.weight(0.8f), fontWeight = bold)

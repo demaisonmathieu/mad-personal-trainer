@@ -15,6 +15,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -119,16 +123,22 @@ fun HistoryScreen(vm: AppViewModel) {
         if (allSessions.isNotEmpty()) item { TrendsCard(trend) }
         adjustment?.let { adj -> item { PlanAdjustCard(vm, adj, adjustedThisWeek) } }
         items(sessions, key = { it.id }) { s ->
-            Card(Modifier.fillMaxWidth().clickable { selectedId = s.id }) {
+            Card(Modifier.fillMaxWidth().clickable { selectedId = s.id }, colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(sportIcon(s.sport), s.sport.label, tint = MaterialTheme.colorScheme.primary)
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.size(44.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .background(if (s.sport == Sport.RUNNING) Night.AccentContainer else Color(0xFF13243A)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(sportIcon(s.sport), s.sport.label, tint = if (s.sport == Sport.RUNNING) Night.Accent else CadenceColor)
+                    }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(dateFmt.format(Date(s.startedAt)), fontWeight = FontWeight.SemiBold)
                         Text(s.workoutName ?: "Séance libre", style = MaterialTheme.typography.bodySmall)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(formatDuration(s.durationSec), fontWeight = FontWeight.Bold)
+                        Text(formatDuration(s.durationSec), fontFamily = Display, fontWeight = FontWeight.Bold, style = NumberStyle)
                         Text(
                             if (s.sport == Sport.RUNNING) "%.2f km · %s/km".format(s.distanceM / 1000.0, formatPace(s.avgPaceSecPerKm))
                             else "${s.avgPower} W moy.",
@@ -156,33 +166,30 @@ private fun SessionDetail(s: SessionRecord, vm: AppViewModel, onBack: () -> Unit
             }
             IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Supprimer") }
         }
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatRow(
-                    listOf(
-                        "Durée" to formatDuration(s.durationSec),
-                        "Distance" to "%.2f km".format(s.distanceM / 1000.0),
-                        "kcal" to s.kcal.toString(),
-                    ),
-                )
+        if (s.sport == Sport.RUNNING) RouteMapCard(s.samples)
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
+            Column(Modifier.padding(16.dp)) {
                 if (s.sport == Sport.RUNNING) {
-                    StatRow(
+                    val e = Elevation.stats(s.samples)
+                    SummaryGrid(
                         listOf(
-                            "Allure moy." to "${formatPace(s.avgPaceSecPerKm)}/km",
+                            "Distance" to "%.2f km".format(s.distanceM / 1000.0).replace('.', ','),
+                            "Temps" to formatDuration(s.durationSec),
+                            "Allure" to formatPace(s.avgPaceSecPerKm),
                             "FC moy." to (s.avgHr?.toString() ?: "--"),
                             "FC max" to (s.maxHr?.toString() ?: "--"),
-                        ),
+                            "kcal" to s.kcal.toString(),
+                        ) + (e?.let { listOf("D+" to "${it.gainM} m", "D−" to "${it.lossM} m", "Écart alt." to "${it.rangeM} m") } ?: emptyList()),
                     )
-                    Elevation.stats(s.samples)?.let { e ->
-                        StatRow(listOf("D+" to "${e.gainM} m", "D−" to "${e.lossM} m", "Écart alt." to "${e.rangeM} m"))
-                    }
                 } else {
-                    StatRow(
+                    SummaryGrid(
                         listOf(
+                            "Durée" to formatDuration(s.durationSec),
                             "Puiss. moy." to "${s.avgPower} W",
                             "Puiss. max" to "${s.maxPower} W",
                             "Cadence" to "%.0f".format(s.avgCadence),
-                            "Cardio" to (s.avgHr?.toString() ?: "--"),
+                            "FC moy." to (s.avgHr?.toString() ?: "--"),
+                            "kcal" to s.kcal.toString(),
                         ),
                     )
                 }
@@ -192,9 +199,8 @@ private fun SessionDetail(s: SessionRecord, vm: AppViewModel, onBack: () -> Unit
         val samples = downsample(s.samples.map { it }, 400)
         if (s.sport == Sport.RUNNING) {
             ChartCard("Vitesse (km/h)", samples.map { it.paceSecPerKm?.let { p -> 3600f / p } }, CadenceColor)
-            RouteMapCard(s.samples)
             ElevationCard(s)
-            KmSplitsCard(s)
+            KmSplitsCard(s, vm.repo.profile.value.hrZones)
             VmaCard(s, vm)
         } else {
             ChartCard("Puissance (W)", samples.map { it.power?.toFloat() }, PowerColor)

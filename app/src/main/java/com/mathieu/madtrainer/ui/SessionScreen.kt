@@ -2,6 +2,11 @@ package com.mathieu.madtrainer.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -119,13 +124,13 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
             SessionReportCard(it, vm)
         }
 
-        LiveMetrics(metrics, session, vm)
-
         if (session.running) {
-            session.workout?.let { WorkoutProgress(session) }
+            LiveElliptical(vm, session, metrics)
             ControlPanel(vm, metrics, caps)
             RunningButtons(vm, session)
+            SecondaryMetrics(metrics, session)
         } else {
+            LiveMetrics(metrics, session, vm)
             SectionTitle("Démarrer")
             Button(onClick = { vm.startSession(null) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.PlayArrow, null)
@@ -172,54 +177,6 @@ private fun LiveMetrics(m: MachineData, session: LiveSession, vm: AppViewModel) 
     }
 }
 
-@Composable
-private fun WorkoutProgress(session: LiveSession) {
-    val w = session.workout ?: return
-    val p = session.position ?: return
-    val step = w.steps.getOrNull(p.index) ?: return
-    val next = w.steps.getOrNull(p.index + 1)
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text(w.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        step.name.ifBlank { "Étape ${p.index + 1}" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(stepTargetText(step), style = MaterialTheme.typography.bodyMedium)
-                }
-                val free = SessionExtension.isFreeExtension(step)
-                Text(
-                    if (free) "+" + formatDuration(p.stepElapsed) else formatDuration(p.stepRemaining),
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            if (SessionExtension.isFreeExtension(step)) {
-                Text(
-                    "Programme terminé · prolongation libre : appuie sur Terminer quand tu veux.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            } else {
-                LinearProgressIndicator(
-                    progress = { if (step.durationSec > 0) p.stepElapsed.toFloat() / step.durationSec else 1f },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                )
-                WorkoutProfile(w, Modifier.fillMaxWidth().height(48.dp), currentIndex = p.index, progressSec = session.elapsed)
-                Text(
-                    "Étape ${p.index + 1}/${w.steps.size} · reste ${formatDuration(w.totalSec - session.elapsed)}" +
-                        (next?.let { " · ensuite : ${it.name.ifBlank { "étape" }} (${stepTargetText(it)})" } ?: ""),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ControlPanel(vm: AppViewModel, m: MachineData, caps: Capabilities) {
@@ -232,7 +189,7 @@ private fun ControlPanel(vm: AppViewModel, m: MachineData, caps: Capabilities) {
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text("Contrôle manuel", fontWeight = FontWeight.SemiBold)
+            Text("RÉSISTANCE", style = MaterialTheme.typography.labelMedium, color = Night.Muted)
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 SegmentedButton(selected = mode == 0, onClick = { mode = 0 }, shape = SegmentedButtonDefaults.itemShape(0, 2)) {
                     Text("Résistance")
@@ -277,38 +234,42 @@ private fun ControlPanel(vm: AppViewModel, m: MachineData, caps: Capabilities) {
 @Composable
 private fun Stepper(value: String, unit: String, onMinus: () -> Unit, onPlus: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-        FilledIconButton(onClick = onMinus) { Icon(Icons.Filled.Remove, "Moins") }
+        FilledIconButton(onClick = onMinus, modifier = Modifier.size(56.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = Night.Surface2, contentColor = Night.Text)) {
+            Icon(Icons.Filled.Remove, "Moins")
+        }
         Spacer(Modifier.width(24.dp))
-        Text(value, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-        Text(" $unit", style = MaterialTheme.typography.bodyMedium)
+        Text(value, fontFamily = Display, fontSize = 40.sp, fontWeight = FontWeight.Bold, style = NumberStyle)
+        Text(" $unit", style = MaterialTheme.typography.bodyMedium, color = Night.Muted)
         Spacer(Modifier.width(24.dp))
-        FilledIconButton(onClick = onPlus) { Icon(Icons.Filled.Add, "Plus") }
+        FilledIconButton(onClick = onPlus, modifier = Modifier.size(56.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = Night.Surface2, contentColor = Night.Text)) {
+            Icon(Icons.Filled.Add, "Plus")
+        }
     }
 }
 
 @Composable
 private fun RunningButtons(vm: AppViewModel, session: LiveSession) {
     var confirmStop by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        FilledTonalButton(onClick = { vm.togglePause() }, modifier = Modifier.weight(1f)) {
-            Icon(if (session.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, null)
-            Text(if (session.paused) " Reprendre" else " Pause")
+    val current = session.position?.let { session.workout?.steps?.getOrNull(it.index) }
+    val canExtend = session.workout != null && !SessionExtension.isFreeExtension(current)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        // « Je me sens bien » : +5 min (inactif pendant la prolongation libre)
+        RoundButton(onClick = { vm.extendStep() }, size = 64, container = Night.Surface, enabled = canExtend, label = "Ajouter 5 minutes") {
+            Text("+5'", fontWeight = FontWeight.SemiBold, color = if (canExtend) Night.Text else Night.Muted)
         }
-        if (session.workout != null) {
-            // « Je me sens bien » : +5 min (masqué pendant la prolongation libre)
-            val current = session.position?.let { session.workout?.steps?.getOrNull(it.index) }
-            if (!SessionExtension.isFreeExtension(current)) {
-                OutlinedButton(onClick = { vm.extendStep() }) {
-                    Icon(Icons.Filled.MoreTime, "Prolonger de 5 minutes")
-                }
-            }
-            OutlinedButton(onClick = { vm.skipStep() }) {
-                Icon(Icons.Filled.SkipNext, "Étape suivante")
-            }
+        RoundButton(onClick = { vm.togglePause() }, size = 92, container = Night.Accent, label = if (session.paused) "Reprendre" else "Pause") {
+            Icon(if (session.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, null, Modifier.size(38.dp), tint = Night.Bg)
         }
-        Button(onClick = { confirmStop = true }, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.Stop, null)
-            Text(" Terminer")
+        RoundButton(onClick = { confirmStop = true }, size = 64, container = Color(0xFF1E1215), label = "Terminer") {
+            Icon(Icons.Filled.Stop, null, tint = Color(0xFFFF6B81))
+        }
+    }
+    if (session.workout != null) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            TextButton(onClick = { vm.skipStep() }) {
+                Icon(Icons.Filled.SkipNext, null)
+                Text(" Étape suivante")
+            }
         }
     }
     if (confirmStop) {
@@ -322,6 +283,83 @@ private fun RunningButtons(vm: AppViewModel, session: LiveSession) {
                 TextButton(onClick = { confirmStop = false; vm.stopSession(save = false) }) { Text("Abandonner") }
             },
         )
+    }
+}
+
+/** Séance en cours : chrono, frise du programme, puissance en très gros, cardio en couleur de zone, cadence. */
+@Composable
+private fun LiveElliptical(vm: AppViewModel, session: LiveSession, m: MachineData) {
+    val profile by vm.repo.profile.collectAsStateWithLifecycle()
+    val w = session.workout
+    val p = session.position
+    val step = if (w != null && p != null) w.steps.getOrNull(p.index) else null
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text((w?.name ?: "Séance libre"), style = MaterialTheme.typography.titleLarge)
+                if (session.paused) Text("EN PAUSE", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+            }
+            Text(formatDuration(session.elapsed), fontFamily = Display, fontSize = 34.sp, fontWeight = FontWeight.Bold, style = NumberStyle)
+        }
+        if (w != null && p != null && step != null) {
+            val free = SessionExtension.isFreeExtension(step)
+            if (!free) WorkoutProfile(w, Modifier.fillMaxWidth().height(40.dp), currentIndex = p.index, progressSec = session.elapsed)
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Night.AccentContainer),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Night.Accent),
+            ) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("ÉTAPE ${p.index + 1} / ${w.steps.size}", style = MaterialTheme.typography.labelMedium, color = Night.AccentText, fontWeight = FontWeight.SemiBold)
+                        Text(step.name.ifBlank { "Étape ${p.index + 1}" }, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            if (free) "Programme terminé : Terminer quand tu veux." else stepTargetText(step) +
+                                (w.steps.getOrNull(p.index + 1)?.let { " · ensuite ${it.name.ifBlank { "étape" }}" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Night.Soft,
+                        )
+                    }
+                    Text(
+                        if (free) "+" + formatDuration(p.stepElapsed) else formatDuration(p.stepRemaining),
+                        fontFamily = Display, fontSize = 32.sp, fontWeight = FontWeight.Bold, style = NumberStyle,
+                    )
+                }
+            }
+        }
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("PUISSANCE", style = MaterialTheme.typography.labelMedium, color = Night.Muted)
+                Text(m.powerW?.toString() ?: "--", fontFamily = Display, fontSize = 84.sp, fontWeight = FontWeight.Bold, color = PowerColor, style = NumberStyle)
+                Text(
+                    "watts" + (step?.takeIf { it.mode == com.mathieu.madtrainer.data.StepMode.POWER }?.let { " · cible ${it.target.toInt()}" } ?: ""),
+                    color = Night.Soft,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.weight(1f)) { HeartRateCard(m.heartRate?.takeIf { it > 0 }, profile.hrZones) }
+            MetricTile("Cadence", m.cadence?.let { "%.0f".format(it) } ?: "--", "spm", Icons.Filled.Speed, CadenceColor, Modifier.weight(1f))
+        }
+    }
+}
+
+/** Valeurs secondaires pendant la séance (vitesse, distance, calories, résistance) et courbe de puissance. */
+@Composable
+private fun SecondaryMetrics(m: MachineData, session: LiveSession) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Night.Surface)) {
+        Row(Modifier.padding(14.dp)) {
+            StatRow(
+                listOf(
+                    "km/h" to (m.speedKmh?.let { "%.1f".format(it) } ?: "--"),
+                    "km" to (m.distanceM?.let { "%.2f".format(it / 1000.0) } ?: "--"),
+                    "kcal" to (m.totalKcal?.toString() ?: "--"),
+                ),
+            )
+        }
+    }
+    if (session.samples.size > 2) {
+        ChartCard("Puissance (W)", session.samples.takeLast(300).map { it.power?.toFloat() }, PowerColor)
     }
 }
 

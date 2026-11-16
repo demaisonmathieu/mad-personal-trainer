@@ -55,6 +55,12 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.coach.Meal
+import com.mathieu.madtrainer.coach.NutritionPlan
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Restaurant
 import com.mathieu.madtrainer.data.BodyMeasure
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.data.BodyStats.fmt
@@ -79,6 +85,9 @@ fun BodyScreen(vm: AppViewModel) {
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var period by rememberSaveable { mutableIntStateOf(90) }
+    val globalPlan by vm.repo.globalPlan.collectAsStateWithLifecycle()
+    val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
+    val nutrition = remember(cache, profile, globalPlan, workouts) { vm.nutritionPlan() }
 
     val permissionLauncher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
         vm.refreshHealth()
@@ -169,6 +178,7 @@ fun BodyScreen(vm: AppViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            item { NutritionCard(nutrition) }
         } else {
             // Dernière pesée
             item {
@@ -221,6 +231,8 @@ fun BodyScreen(vm: AppViewModel) {
             if (cache.measures.any { it.leanMassKg != null }) {
                 item { TrendCard("Masse maigre", "kg", cache.measures, period, now, Color(0xFF81C784)) { it.leanMassKg } }
             }
+
+            item { NutritionCard(nutrition) }
 
             // Historique des pesées
             item { SectionTitle("Pesées") }
@@ -316,5 +328,71 @@ private fun ScaledChart(values: List<Float?>, color: Color, modifier: Modifier =
                 Text(fmt(min.toDouble()), style = MaterialTheme.typography.labelSmall)
             }
         }
+    }
+}
+
+/** Plan nutritionnel calculé sans IA : besoins, macros, repas types (jour de séance / de repos). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NutritionCard(n: NutritionPlan) {
+    var training by rememberSaveable { mutableStateOf(true) }
+    var showTips by rememberSaveable { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Restaurant, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("  Nutrition (calcul sans IA)", fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                "Métabolisme de base ${n.bmr} kcal (${n.bmrSource}) · vie quotidienne ${n.dailyBase} kcal · " +
+                    "séance ≈ ${n.sessionKcal} kcal × ${n.sessionsPerWeek}/sem." +
+                    (if (n.adjustment < 0) " · déficit ${-n.adjustment} kcal/j" else " · maintien"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            n.weeksToTarget?.let {
+                Text("Poids visé atteint en environ $it semaines à ce rythme.", style = MaterialTheme.typography.bodySmall)
+            }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                listOf(true, false).forEachIndexed { i, t ->
+                    SegmentedButton(
+                        selected = training == t,
+                        onClick = { training = t },
+                        shape = SegmentedButtonDefaults.itemShape(i, 2),
+                        icon = {},
+                    ) { Text(if (t) "Jour de séance" else "Jour de repos") }
+                }
+            }
+            StatRow(
+                listOf(
+                    "kcal" to "${if (training) n.trainingDayKcal else n.restDayKcal}",
+                    "protéines" to "${n.proteinG} g",
+                    "glucides" to "${if (training) n.carbsTrainingG else n.carbsRestG} g",
+                    "lipides" to "${n.fatG} g",
+                ),
+            )
+            Text("Eau : ${fmt(n.waterL)} L par jour (+0,5 L par heure de séance)", style = MaterialTheme.typography.bodySmall)
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            (if (training) n.trainingMeals else n.restMeals).forEach { MealRow(it) }
+            Text(
+                "Portions indicatives, à ajuster selon ta faim et l'évolution du poids sur 2 à 3 semaines.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = { showTips = !showTips }) { Text(if (showTips) "Masquer les conseils" else "Conseils") }
+            if (showTips) n.tips.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+@Composable
+private fun MealRow(m: Meal) {
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(m.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("${m.kcal} kcal", style = MaterialTheme.typography.labelMedium)
+        }
+        Text("P ${m.proteinG} g · G ${m.carbsG} g · L ${m.fatG} g", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(m.example, style = MaterialTheme.typography.bodySmall)
     }
 }

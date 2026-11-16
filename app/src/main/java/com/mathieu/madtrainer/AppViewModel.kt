@@ -46,6 +46,10 @@ import com.mathieu.madtrainer.data.VoiceCoach
 import com.mathieu.madtrainer.data.WeekPlanner
 import com.mathieu.madtrainer.run.RunTracker
 import com.mathieu.madtrainer.data.BodyCache
+import com.mathieu.madtrainer.coach.NutritionPlan
+import com.mathieu.madtrainer.coach.NutritionPlanner
+import com.mathieu.madtrainer.coach.PlannerInput
+import com.mathieu.madtrainer.coach.RulePlanner
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.health.HealthAvailability
 import com.mathieu.madtrainer.health.HealthConnectSource
@@ -330,6 +334,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             },
             onFailure = { _coach.value = CoachState.Error(it.message ?: "Réponse illisible") },
         )
+    }
+
+    /** Plan construit par règles d'entraînement, sans IA (profil, historique, zones, douleurs, poids). */
+    fun generateRulePlan() {
+        val eq = equipment()
+        val strengthDays = repo.strengthPlan.value?.plan?.sessions?.filter { it.week == 1 }?.map { it.day }.orEmpty()
+        val plan = RulePlanner.build(
+            PlannerInput(
+                profile = repo.profile.value,
+                sessions = repo.sessions.value,
+                strava = repo.strava.value.activities,
+                strength = repo.strengthProfile.value,
+                strengthDays = strengthDays,
+                body = repo.body.value,
+            ),
+        )
+        val workouts = CoachParser.toGlobalWorkouts(plan, eq.resistanceMin, eq.resistanceMax)
+        viewModelScope.launch {
+            repo.saveGlobalPlan(SavedPlan(System.currentTimeMillis(), plan), workouts)
+            _coach.value = CoachState.Done(workouts.size)
+        }
+    }
+
+    /** Plan nutritionnel (sans IA) : dépense estimée à partir de la semaine en cours du plan, s'il y en a un. */
+    fun nutritionPlan(): NutritionPlan {
+        val plan = repo.globalPlan.value
+        val weekWorkouts = plan?.let { sp ->
+            val ws = repo.workouts.value.filter { it.id in sp.workoutIds }
+            val maxWeek = ws.maxOfOrNull { it.planWeek ?: 1 } ?: 1
+            val week = WeekPlanner.currentWeek(sp.createdAt, System.currentTimeMillis(), maxWeek)
+            ws.filter { (it.planWeek ?: 1) == week }
+        }.orEmpty()
+        return NutritionPlanner.build(repo.profile.value, repo.body.value, weekWorkouts)
     }
 
     fun generateWithApi() {

@@ -23,6 +23,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.PlayArrow
@@ -83,6 +85,7 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
     var editingProfile by remember { mutableStateOf(false) }
     var pasted by remember { mutableStateOf("") }
     var showAiSettings by remember { mutableStateOf(false) }
+    var confirmRulePlan by remember { mutableStateOf(false) }
     var showStrength by remember { mutableStateOf(false) }
     val player by vm.player.collectAsStateWithLifecycle()
 
@@ -159,6 +162,29 @@ fun CoachScreen(vm: AppViewModel, onStartWorkout: () -> Unit) {
                 ) {
                     Icon(Icons.Filled.AutoAwesome, null)
                     Text(if (settings.anthropicKey.isBlank()) "  Générer avec Claude (clé API requise)" else "  Générer avec Claude")
+                }
+                // Plan par règles d'entraînement : instantané, sans clé API
+                OutlinedButton(
+                    onClick = { if (globalPlan != null) confirmRulePlan = true else vm.generateRulePlan() },
+                    enabled = coach != CoachState.Generating,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.Calculate, null, Modifier.size(18.dp))
+                    Text("  Générer sans IA (profil, perfs, zones, poids)")
+                }
+                if (confirmRulePlan) {
+                    AlertDialog(
+                        onDismissRequest = { confirmRulePlan = false },
+                        title = { Text("Remplacer le plan actuel ?") },
+                        text = { Text("Les séances du plan actuel seront remplacées par le nouveau plan. Les séances déjà faites restent dans l'historique.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirmRulePlan = false
+                                vm.generateRulePlan()
+                            }) { Text("Remplacer") }
+                        },
+                        dismissButton = { TextButton(onClick = { confirmRulePlan = false }) { Text("Annuler") } },
+                    )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {

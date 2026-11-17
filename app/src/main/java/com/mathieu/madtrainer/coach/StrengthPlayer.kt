@@ -48,6 +48,17 @@ object StrengthPlayer {
         return out
     }
 
+    /**
+     * Récap par exercice : une série compte comme faite si au moins une de ses étapes de travail
+     * a été validée (bouton « Fait » ou chrono allé au bout), pas simplement passée.
+     */
+    fun recap(steps: List<PlayerStep>, completed: Set<Int>): List<StrengthLogExercise> =
+        steps.withIndex().filter { !it.value.rest }.groupBy { it.value.exerciseIndex }.map { (_, work) ->
+            val e = work.first().value.exercise
+            val doneSets = work.filter { it.index in completed }.map { it.value.set }.toSet().size
+            StrengthLogExercise(e.name, doneSets, e.sets.coerceAtLeast(1), e.reps, e.duration_sec, e.per_side)
+        }
+
     /** Durée estimée (s), en comptant 3 s par répétition. */
     fun estimatedSeconds(session: StrengthSession): Int =
         expand(session).sumOf { it.seconds ?: ((it.exercise.reps ?: 10) * 3) }

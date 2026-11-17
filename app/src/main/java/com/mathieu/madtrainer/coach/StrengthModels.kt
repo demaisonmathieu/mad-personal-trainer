@@ -35,7 +35,27 @@ data class PainLog(
     val painBefore: Int,
     val painAfter: Int,
     val note: String = "",
+    /** Récap de la séance (0 / vide pour les anciens enregistrements) */
+    val durationSec: Int = 0,
+    val setsDone: Int = 0,
+    val setsTotal: Int = 0,
+    val exercises: List<StrengthLogExercise> = emptyList(),
 )
+
+/** Ce qui a été fait sur un exercice pendant la séance. */
+@Serializable
+data class StrengthLogExercise(
+    val name: String,
+    val setsDone: Int,
+    val sets: Int,
+    val reps: Int? = null,
+    val durationSec: Int? = null,
+    val perSide: Boolean = false,
+) {
+    /** ex. « 3/3 × 12 », « 2/3 × 30 s / côté » */
+    val detail: String
+        get() = "$setsDone/$sets × " + (reps?.toString() ?: "${durationSec ?: 0} s") + (if (perSide) " / côté" else "")
+}
 
 // ---------------------------------------------------------------- format JSON demandé à l'IA
 

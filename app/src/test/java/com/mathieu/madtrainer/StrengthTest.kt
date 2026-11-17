@@ -32,6 +32,27 @@ class StrengthTest {
     }
 
     @Test
+    fun recapCountsOnlyCompletedSets() {
+        val s = StrengthSession(
+            name = "A",
+            exercises = listOf(
+                StrengthExercise("Pont fessier", sets = 2, reps = 12, rest_sec = 45),
+                StrengthExercise("Gainage latéral", sets = 2, duration_sec = 30, rest_sec = 30, per_side = true),
+            ),
+        )
+        val steps = StrengthPlayer.expand(s)
+        // Pont : série 1 faite (0), série 2 sautée ; gainage : série 1 gauche faite (4), série 2 rien
+        val recap = StrengthPlayer.recap(steps, setOf(0, 4))
+        assertEquals(2, recap.size)
+        assertEquals(1, recap[0].setsDone)
+        assertEquals(2, recap[0].sets)
+        assertEquals("1/2 × 12", recap[0].detail)
+        assertEquals(1, recap[1].setsDone)
+        assertEquals("1/2 × 30 s / côté", recap[1].detail)
+        assertEquals(2, StrengthPlayer.recap(steps, steps.indices.toSet()).first().setsDone)
+    }
+
+    @Test
     fun promptMentionsSciaticRedFlagsAndPainLogs() {
         val prompt = StrengthPrompt.build(
             UserProfile(),

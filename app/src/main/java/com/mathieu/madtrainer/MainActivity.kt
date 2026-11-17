@@ -70,6 +70,7 @@ import com.mathieu.madtrainer.ui.MadTheme
 import com.mathieu.madtrainer.ui.Night
 import com.mathieu.madtrainer.ui.RunScreen
 import com.mathieu.madtrainer.ui.SessionScreen
+import com.mathieu.madtrainer.ui.StrengthPlayerScreen
 import com.mathieu.madtrainer.ui.TodayScreen
 import com.mathieu.madtrainer.ui.UpdateBanner
 import com.mathieu.madtrainer.ui.WebScreen
@@ -136,6 +137,11 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
         planSection = section
     }
 
+    // Séance de renfo en cours : lecteur plein écran, sans barre d'onglets
+    val player by vm.player.collectAsStateWithLifecycle()
+    if (player.session != null) {
+        StrengthPlayerScreen(vm)
+    } else {
     Scaffold(
         containerColor = Night.Bg,
         topBar = {
@@ -319,6 +325,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                 }
             }
         }
+    }
     }
 }
 

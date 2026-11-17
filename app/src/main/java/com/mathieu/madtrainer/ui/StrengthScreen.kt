@@ -2,6 +2,8 @@ package com.mathieu.madtrainer.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -58,11 +60,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
 import com.mathieu.madtrainer.CoachState
-import com.mathieu.madtrainer.StrengthPlayerState
 import com.mathieu.madtrainer.coach.PAIN_AREAS
 import com.mathieu.madtrainer.coach.STRENGTH_EQUIPMENT
 import com.mathieu.madtrainer.coach.StrengthPlayer
 import com.mathieu.madtrainer.coach.StrengthProfile
+import com.mathieu.madtrainer.coach.StrengthLogExercise
 import com.mathieu.madtrainer.coach.StrengthSession
 import com.mathieu.madtrainer.data.formatDuration
 import com.mathieu.madtrainer.run.RunTracker
@@ -73,12 +75,8 @@ import java.util.Locale
 /** Section « Renfo » de l'onglet Coach : douleurs → prompt IA → séances guidées → suivi de la douleur. */
 @Composable
 fun StrengthSection(vm: AppViewModel) {
-    val player by vm.player.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { RunTracker.ensureTts() }
-    if (player.session != null) {
-        StrengthPlayerView(player, vm)
-        return
-    }
+    // Séance en cours : lecteur plein écran (StrengthPlayerScreen, affiché par MainActivity)
     val sp by vm.repo.strengthProfile.collectAsStateWithLifecycle()
     val saved by vm.repo.strengthPlan.collectAsStateWithLifecycle()
     val logs by vm.repo.painLogs.collectAsStateWithLifecycle()
@@ -234,6 +232,7 @@ fun StrengthSection(vm: AppViewModel) {
                         }
                         Text(
                             "${df.format(Date(l.date))} · ${l.sessionName} : ${l.painBefore} $trend ${l.painAfter}/10" +
+                                (if (l.durationSec > 0) " · ${formatDuration(l.durationSec)}, ${l.setsDone}/${l.setsTotal} séries" else "") +
                                 if (l.note.isNotBlank()) " — ${l.note}" else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (l.painAfter > l.painBefore) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
@@ -344,102 +343,41 @@ private fun PainForm(initial: StrengthProfile, onSave: (StrengthProfile) -> Unit
     }
 }
 
+/** Récap d'une séance de renfo : chiffres clés puis détail par exercice (séries faites / prévues). */
 @Composable
-private fun StrengthPlayerView(p: StrengthPlayerState, vm: AppViewModel) {
-    if (p.finished) {
-        FinishDialog(p, vm)
-        return
-    }
-    val step = p.step ?: return
-    val next = p.steps.getOrNull(p.index + 1)
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(p.session?.name.orEmpty(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        LinearProgressIndicator(progress = { (p.index + 1f) / p.steps.size }, modifier = Modifier.fillMaxWidth())
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (step.rest) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
+fun StrengthRecap(
+    durationSec: Int,
+    setsDone: Int,
+    setsTotal: Int,
+    exercises: List<StrengthLogExercise>,
+    pain: Pair<Int, Int>? = null,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SummaryGrid(
+            listOfNotNull(
+                "Temps" to formatDuration(durationSec),
+                "Séries" to "$setsDone/$setsTotal",
+                "Exercices" to "${exercises.count { it.setsDone > 0 }}/${exercises.size}",
+                pain?.let { "Douleur" to "${it.first} → ${it.second}" },
             ),
-        ) {
-            Column(Modifier.padding(16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(step.label, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (!step.rest) Text("Série ${step.set}/${step.totalSets}")
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    p.remaining?.let { formatDuration(it.coerceAtLeast(0)) } ?: "${step.exercise.reps ?: 0} répétitions",
-                    fontSize = 52.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                if (p.paused) Text("EN PAUSE", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-            }
-        }
-        if (!step.rest) {
-            val e = step.exercise
-            ExerciseIllustration(vm.exerciseCatalog.find(e))
-            YoutubeDemoButton(e.name, Modifier.align(Alignment.CenterHorizontally))
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (e.instructions.isNotBlank()) Text(e.instructions)
-                    if (e.cues.isNotBlank()) Text("À surveiller : ${e.cues}", style = MaterialTheme.typography.bodySmall)
-                    if (e.easier.isNotBlank()) Text("Plus facile : ${e.easier}", style = MaterialTheme.typography.bodySmall)
-                    if (e.harder.isNotBlank()) Text("Plus dur : ${e.harder}", style = MaterialTheme.typography.bodySmall)
-                    if (e.avoid_if.isNotBlank()) Text("À éviter si : ${e.avoid_if}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                }
-            }
-        } else {
-            next?.let {
-                Text("Ensuite : ${it.label}", style = MaterialTheme.typography.titleMedium)
-                if (!it.rest) ExerciseIllustration(vm.exerciseCatalog.find(it.exercise), maxHeight = 160.dp)
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            FilledIconButton(onClick = { vm.previousStrengthStep() }) { Icon(Icons.Filled.SkipPrevious, "Précédent") }
-            FilledIconButton(onClick = { vm.toggleStrengthPause() }) {
-                Icon(if (p.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, "Pause")
-            }
-            if (p.remaining == null) {
-                Button(onClick = { vm.nextStrengthStep() }) {
-                    Icon(Icons.Filled.Check, null)
-                    Text(" Fait")
-                }
-            } else {
-                FilledIconButton(onClick = { vm.nextStrengthStep() }) { Icon(Icons.Filled.SkipNext, "Suivant") }
-            }
-        }
-        TextButton(onClick = { vm.finishStrength(null, "") }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Arrêter la séance")
-        }
-        Text(
-            "Si un exercice réveille ou aggrave la douleur (> 3/10), passe à la version plus facile ou à l'exercice suivant.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun FinishDialog(p: StrengthPlayerState, vm: AppViewModel) {
-    var after by remember { mutableFloatStateOf(p.painBefore.toFloat()) }
-    var note by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text("Séance terminée") },
-        text = {
-            Column {
-                Text("Douleur maintenant : ${after.toInt()}/10 (avant : ${p.painBefore}/10)")
-                Slider(value = after, onValueChange = { after = it }, valueRange = 0f..10f, steps = 9)
-                OutlinedTextField(note, { note = it }, label = { Text("Remarque (exercice gênant…)") }, modifier = Modifier.fillMaxWidth())
-                if (after.toInt() >= p.painBefore + 2) {
-                    Text(
-                        "La douleur a augmenté : le prochain programme évitera les exercices en cause. Si elle persiste demain, demande un avis médical.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+        exercises.forEach { e ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    e.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    color = if (e.setsDone < e.sets) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    e.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (e.setsDone == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-        },
-        confirmButton = { TextButton(onClick = { vm.finishStrength(after.toInt(), note) }) { Text("Enregistrer") } },
-    )
+        }
+    }
 }
 
 /** Liste dépliable des exercices d'une séance, avec illustration et lien vidéo. */

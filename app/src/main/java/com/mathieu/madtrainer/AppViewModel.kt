@@ -115,7 +115,10 @@ data class StrengthPlayerState(
     val finished: Boolean = false,
     val painBefore: Int = 0,
     val elapsed: Int = 0,
+    /** Indices des étapes de travail réellement faites (pas sautées) */
+    val completed: Set<Int> = emptySet(),
 ) {
+    val recap get() = StrengthPlayer.recap(steps, completed)
     val step: PlayerStep? get() = steps.getOrNull(index)
 }
 
@@ -545,13 +548,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _player.value = p.copy(elapsed = p.elapsed + 1, remaining = r?.minus(1))
         if (r != null) {
             if (r - 1 in 1..3) RunTracker.speak("${r - 1}")
-            if (r - 1 <= 0) nextStrengthStep()
+            if (r - 1 <= 0) nextStrengthStep(done = true)
         }
     }
 
-    /** Étape suivante (bouton « Fait » pour les répétitions, ou fin du chrono). */
-    fun nextStrengthStep() {
-        val p = _player.value
+    /** Étape suivante : `done` = bouton « Fait » ou fin du chrono ; false = étape sautée. */
+    fun nextStrengthStep(done: Boolean = false) {
+        val p0 = _player.value
+        val p = if (done && p0.step?.rest == false) p0.copy(completed = p0.completed + p0.index) else p0
         val next = p.index + 1
         if (next >= p.steps.size) {
             playerTicker?.cancel()
@@ -571,6 +575,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         announcePlayerStep()
     }
 
+    /** Rallonge l'étape chronométrée en cours (ex. « +15 s » de repos). */
+    fun extendStrengthStep(sec: Int) {
+        val p = _player.value
+        p.remaining?.let { _player.value = p.copy(remaining = it + sec) }
+    }
+
     fun toggleStrengthPause() {
         _player.value = _player.value.copy(paused = !_player.value.paused)
     }
@@ -582,7 +592,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val session = p.session
         if (session != null && painAfter != null) {
             viewModelScope.launch {
-                repo.addPainLog(PainLog(System.currentTimeMillis(), session.name, p.painBefore, painAfter, note))
+                val recap = p.recap
+                repo.addPainLog(
+                    PainLog(
+                        System.currentTimeMillis(), session.name, p.painBefore, painAfter, note,
+                        durationSec = p.elapsed,
+                        setsDone = recap.sumOf { it.setsDone },
+                        setsTotal = recap.sumOf { it.sets },
+                        exercises = recap,
+                    ),
+                )
                 repo.saveStrengthProfile(repo.strengthProfile.value.copy(painLevel = painAfter))
             }
         }

@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.coach.PainLog
 import com.mathieu.madtrainer.coach.StrengthSession
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.data.Elevation
@@ -95,6 +96,8 @@ fun TodayScreen(
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
     val body by vm.repo.body.collectAsStateWithLifecycle()
     val sp by vm.repo.strengthProfile.collectAsStateWithLifecycle()
+    val painLogs by vm.repo.painLogs.collectAsStateWithLifecycle()
+    val doneKeys by vm.repo.done.collectAsStateWithLifecycle()
     val water by HydrationStore.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LifecycleResumeEffect(Unit) {
@@ -117,7 +120,17 @@ fun TodayScreen(
     val weekStrength = if (week == null) emptyList() else strengthPlan?.plan?.sessions.orEmpty().filter { it.week == week }
     fun sessionsOn(i: Int) = sessions.filter { it.startedAt >= dayStart(monday, i) && it.startedAt < dayStart(monday, i + 1) }
     val plannedDays = (weekWorkouts.map { WeekPlanner.dayIndex(it.planDay) } + weekStrength.map { WeekPlanner.dayIndex(it.day) }).toSet()
-    val doneDays = (0..6).filter { sessionsOn(it).isNotEmpty() }.toSet()
+    // Renfo fait : bilan de fin enregistré ce jour-là, ou séance cochée dans « Ma semaine »
+    fun strengthLogOn(i: Int): PainLog? {
+        val s = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.day) == i } ?: return null
+        return painLogs.lastOrNull { it.sessionName == s.name && it.date >= dayStart(monday, i) && it.date < dayStart(monday, i + 1) }
+    }
+    fun strengthDoneOn(i: Int): Boolean {
+        val s = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.day) == i } ?: return false
+        val idx = strengthPlan?.plan?.sessions.orEmpty().indexOf(s)
+        return "r:$idx:${s.name}" in doneKeys || strengthLogOn(i) != null
+    }
+    val doneDays = (0..6).filter { sessionsOn(it).isNotEmpty() || strengthDoneOn(it) }.toSet()
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
@@ -170,6 +183,8 @@ fun TodayScreen(
             done = sessionsOn(selectedDay),
             workout = weekWorkouts.firstOrNull { WeekPlanner.dayIndex(it.planDay) == selectedDay },
             strength = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.day) == selectedDay },
+            strengthDone = strengthDoneOn(selectedDay),
+            strengthLog = strengthLogOn(selectedDay),
             onStart = { w ->
                 vm.setSport(w.sport)
                 vm.launchWorkout(w)
@@ -280,6 +295,8 @@ private fun DayCard(
     done: List<SessionRecord>,
     workout: Workout?,
     strength: StrengthSession?,
+    strengthDone: Boolean,
+    strengthLog: PainLog?,
     onStart: (Workout) -> Unit,
     onStartStrength: (StrengthSession) -> Unit,
     onFreeSession: () -> Unit,
@@ -290,7 +307,7 @@ private fun DayCard(
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Night.Surface),
-        border = BorderStroke(1.dp, if (done.isNotEmpty()) Color(0xFF1F3A2E) else Night.Line),
+        border = BorderStroke(1.dp, if (done.isNotEmpty() || (workout == null && strengthDone)) Color(0xFF1F3A2E) else Night.Line),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when {
@@ -337,16 +354,36 @@ private fun DayCard(
                 strength != null -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Eyebrow("$title · Renfo · ${strength.duration_min} min", Night.AccentText, Modifier.weight(1f))
-                        if (relative > 0) Pill("Prévue", Color(0xFFBFDBFF), Color(0xFF13243A))
+                        when {
+                            strengthDone -> Pill("Faite", Night.Good, Color(0xFF13241C))
+                            relative < 0 -> Pill("Non faite", Night.Bad, Color(0xFF3A1218))
+                            relative > 0 -> Pill("Prévue", Color(0xFFBFDBFF), Color(0xFF13243A))
+                        }
                     }
                     Text(strength.name, style = MaterialTheme.typography.headlineSmall)
                     strength.focus.takeIf { it.isNotBlank() }?.let { Text(it, color = Night.Soft) }
-                    if (relative != 0) {
+                    // Séance faite : récap (les anciens bilans n'ont que la douleur)
+                    if (strengthLog != null) {
+                        Text(
+                            "à " + SimpleDateFormat("HH:mm", Locale.FRANCE).format(Date(strengthLog.date)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Night.Muted,
+                        )
+                        if (strengthLog.durationSec > 0) {
+                            StrengthRecap(
+                                strengthLog.durationSec, strengthLog.setsDone, strengthLog.setsTotal, strengthLog.exercises,
+                                pain = strengthLog.painBefore to strengthLog.painAfter,
+                            )
+                        } else {
+                            Text("Douleur ${strengthLog.painBefore} → ${strengthLog.painAfter}/10", color = Night.Soft)
+                        }
+                        strengthLog.note.takeIf { it.isNotBlank() }?.let { Text("« $it »", style = MaterialTheme.typography.bodySmall, color = Night.Soft) }
+                    } else if (relative != 0 && !strengthDone) {
                         strength.exercises.forEach { ex ->
                             Text("• ${ex.name}", style = MaterialTheme.typography.bodySmall, color = Night.Soft, maxLines = 1)
                         }
                     }
-                    StartButton(if (relative == 0) "Démarrer" else "La faire maintenant") { onStartStrength(strength) }
+                    if (!strengthDone) StartButton(if (relative == 0) "Démarrer" else "La faire maintenant") { onStartStrength(strength) }
                 }
                 !hasPlan -> {
                     Eyebrow("Pas encore de plan", Night.AccentText)

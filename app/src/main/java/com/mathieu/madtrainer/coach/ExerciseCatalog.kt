@@ -12,16 +12,33 @@ data class CatalogExercise(
     val id: String,
     /** Nom (anglais) */
     val n: String,
+    /** Nom français (exercices courants seulement) */
+    val fr: String? = null,
     /** Muscle principal */
     val m: String = "",
+    /** Muscles secondaires */
+    val s: List<String> = emptyList(),
     /** Matériel */
     val e: String = "none",
     /** Catégorie : strength, stretching… */
     val c: String = "",
+    /** Niveau : b débutant, i intermédiaire, e expert */
+    val l: String = "b",
+    /** Force : push, pull, static */
+    val f: String? = null,
+    /** Mécanique : c polyarticulaire, i isolation */
+    val k: String? = null,
+    /** Consignes (français) */
+    val d: String = "",
     /** Chemins des images si différents de id/0.jpg, id/1.jpg */
     val i: List<String>? = null,
 ) {
     val images: List<String> get() = (i ?: listOf("$id/0.jpg", "$id/1.jpg")).map { BASE_URL + it }
+
+    /** Nom affiché : français si connu, sinon anglais. */
+    val label: String get() = fr ?: n
+
+    val muscles: List<String> get() = listOf(m) + s
 
     companion object {
         const val BASE_URL = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
@@ -50,7 +67,7 @@ class ExerciseCatalog(val all: List<CatalogExercise>) {
             FR_KEYWORDS.filter { (fr, _) -> " $q".contains(" $fr") }.flatMap { (_, en) -> en.split('_').map { it.lowercase() } }).distinct()
         return all
             .map { ex ->
-                val hay = normalize(ex.n + " " + ex.id.replace('_', ' ') + " " + ex.m)
+                val hay = normalize(ex.n + " " + (ex.fr ?: "") + " " + ex.id.replace('_', ' ') + " " + ex.m)
                 ex to words.count { hay.contains(it) }
             }
             .filter { it.second > 0 }
@@ -69,18 +86,24 @@ class ExerciseCatalog(val all: List<CatalogExercise>) {
 
     /** Identifiants proposés à l'IA, filtrés selon le matériel disponible pour garder un prompt court. */
     fun idsForPrompt(equipment: List<String>): List<String> {
-        val eq = equipment.joinToString(" ").lowercase()
-        val allowed = BODY_EQUIPMENT.toMutableSet()
-        if ("élastique" in eq || "elastique" in eq) allowed += "bands"
-        if ("swiss" in eq || "ballon" in eq) allowed += "exercise ball"
-        if ("rouleau" in eq) allowed += "foam roll"
-        if ("haltère" in eq || "haltere" in eq) allowed += "dumbbell"
-        if ("kettlebell" in eq) allowed += "kettlebells"
+        val allowed = allowedEquipment(equipment)
         return all.filter { it.e in allowed && (it.c == "strength" || it.c == "stretching") }.map { it.id }
     }
 
     companion object {
         val BODY_EQUIPMENT = setOf("body only", "none", "other")
+
+        /** Matériel de la banque utilisable avec le matériel déclaré dans le profil renfo. */
+        fun allowedEquipment(equipment: List<String>): Set<String> {
+            val eq = equipment.joinToString(" ").lowercase()
+            val allowed = BODY_EQUIPMENT.toMutableSet()
+            if ("élastique" in eq || "elastique" in eq) allowed += "bands"
+            if ("swiss" in eq || "ballon" in eq) allowed += "exercise ball"
+            if ("rouleau" in eq) allowed += "foam roll"
+            if ("haltère" in eq || "haltere" in eq) allowed += "dumbbell"
+            if ("kettlebell" in eq) allowed += "kettlebells"
+            return allowed
+        }
 
         private val json = Json { ignoreUnknownKeys = true }
 

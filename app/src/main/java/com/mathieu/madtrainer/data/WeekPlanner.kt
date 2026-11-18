@@ -30,6 +30,9 @@ object WeekPlanner {
     /** Début (lundi 0 h) de la semaine [week] du plan. */
     fun weekStart(planCreatedAt: Long, week: Int): Long = mondayOf(planCreatedAt) + (week - 1) * WEEK_MS
 
+    /** Clé « faite » d'une séance de renfo perso récurrente pour la semaine commençant à [weekStart]. */
+    fun customDoneKey(weekStart: Long, index: Int, name: String) = "c:${mondayOf(weekStart)}:$index:$name"
+
     /** Index 0..6 du jour, ou -1 si le texte ne correspond à aucun jour (« Jour 1 », vide…). */
     fun dayIndex(day: String?): Int {
         val d = day?.trim()?.lowercase() ?: return -1

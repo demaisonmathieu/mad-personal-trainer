@@ -620,6 +620,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         saveWorkout(w.copy(planDay = day, planWeek = week ?: w.planWeek))
 
     fun updateStrengthSession(index: Int, s: StrengthSession) = viewModelScope.launch { repo.updateStrengthSession(index, s) }
+    fun saveCustomStrength(index: Int?, s: StrengthSession) = viewModelScope.launch { repo.saveCustomStrength(index, s) }
+    fun deleteCustomStrength(index: Int) = viewModelScope.launch { repo.deleteCustomStrength(index) }
 
     /** « Ma semaine » : cocher / décocher une séance du plan. */
     fun setDone(key: String, done: Boolean) = viewModelScope.launch { repo.setDone(key, done) }

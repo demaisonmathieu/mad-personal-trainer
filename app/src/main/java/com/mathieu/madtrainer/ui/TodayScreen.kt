@@ -92,6 +92,7 @@ fun TodayScreen(
     val plan by vm.repo.globalPlan.collectAsStateWithLifecycle()
     val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
     val strengthPlan by vm.repo.strengthPlan.collectAsStateWithLifecycle()
+    val customStrength by vm.repo.customStrength.collectAsStateWithLifecycle()
     val sessions by vm.repo.sessions.collectAsStateWithLifecycle()
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
     val body by vm.repo.body.collectAsStateWithLifecycle()
@@ -117,18 +118,21 @@ fun TodayScreen(
     val maxWeek = maxOf(planWorkouts.maxOfOrNull { it.planWeek ?: 1 } ?: 1, strengthPlan?.plan?.sessions?.maxOfOrNull { it.week } ?: 1)
     val week = ref?.let { WeekPlanner.currentWeek(it, now, maxWeek) }
     val weekWorkouts = if (week == null) emptyList() else planWorkouts.filter { (it.planWeek ?: 1) == week }
-    val weekStrength = if (week == null) emptyList() else strengthPlan?.plan?.sessions.orEmpty().filter { it.week == week }
+    // Renfo de la semaine : séances du plan + séances perso récurrentes, chacune avec sa clé « faite » de « Ma semaine »
+    val weekStrength: List<Pair<StrengthSession, String>> =
+        (if (week == null) emptyList() else strengthPlan?.plan?.sessions.orEmpty().withIndex().filter { it.value.week == week }.map { (idx, s) -> s to "r:$idx:${s.name}" }) +
+            customStrength.withIndex().filter { WeekPlanner.dayIndex(it.value.day) >= 0 }.map { (idx, s) -> s to WeekPlanner.customDoneKey(monday, idx, s.name) }
+    fun strengthOn(i: Int) = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.first.day) == i }
     fun sessionsOn(i: Int) = sessions.filter { it.startedAt >= dayStart(monday, i) && it.startedAt < dayStart(monday, i + 1) }
-    val plannedDays = (weekWorkouts.map { WeekPlanner.dayIndex(it.planDay) } + weekStrength.map { WeekPlanner.dayIndex(it.day) }).toSet()
+    val plannedDays = (weekWorkouts.map { WeekPlanner.dayIndex(it.planDay) } + weekStrength.map { WeekPlanner.dayIndex(it.first.day) }).toSet()
     // Renfo fait : bilan de fin enregistré ce jour-là, ou séance cochée dans « Ma semaine »
     fun strengthLogOn(i: Int): PainLog? {
-        val s = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.day) == i } ?: return null
+        val s = strengthOn(i)?.first ?: return null
         return painLogs.lastOrNull { it.sessionName == s.name && it.date >= dayStart(monday, i) && it.date < dayStart(monday, i + 1) }
     }
     fun strengthDoneOn(i: Int): Boolean {
-        val s = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.day) == i } ?: return false
-        val idx = strengthPlan?.plan?.sessions.orEmpty().indexOf(s)
-        return "r:$idx:${s.name}" in doneKeys || strengthLogOn(i) != null
+        val (_, key) = strengthOn(i) ?: return false
+        return key in doneKeys || strengthLogOn(i) != null
     }
     val doneDays = (0..6).filter { sessionsOn(it).isNotEmpty() || strengthDoneOn(it) }.toSet()
 
@@ -179,10 +183,10 @@ fun TodayScreen(
             dayLabel = if (selectedDay == todayIdx) null
             else SimpleDateFormat("EEEE d MMMM", Locale.FRANCE).format(Date(dayStart(monday, selectedDay))),
             relative = selectedDay.compareTo(todayIdx),
-            hasPlan = ref != null,
+            hasPlan = ref != null || weekStrength.isNotEmpty(),
             done = sessionsOn(selectedDay),
             workout = weekWorkouts.firstOrNull { WeekPlanner.dayIndex(it.planDay) == selectedDay },
-            strength = weekStrength.firstOrNull { WeekPlanner.dayIndex(it.day) == selectedDay },
+            strength = strengthOn(selectedDay)?.first,
             strengthDone = strengthDoneOn(selectedDay),
             strengthLog = strengthLogOn(selectedDay),
             onStart = { w ->
@@ -353,7 +357,7 @@ private fun DayCard(
                 }
                 strength != null -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Eyebrow("$title · Renfo · ${strength.duration_min} min", Night.AccentText, Modifier.weight(1f))
+                        Eyebrow("$title · Renfo · ${(com.mathieu.madtrainer.coach.StrengthPlayer.estimatedSeconds(strength) + 30) / 60} min", Night.AccentText, Modifier.weight(1f))
                         when {
                             strengthDone -> Pill("Faite", Night.Good, Color(0xFF13241C))
                             relative < 0 -> Pill("Non faite", Night.Bad, Color(0xFF3A1218))

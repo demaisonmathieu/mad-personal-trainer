@@ -40,6 +40,7 @@ class Repository(context: Context) {
     private val strengthProfileFile = File(context.filesDir, "strength_profile.json")
     private val strengthPlanFile = File(context.filesDir, "strength_plan.json")
     private val painLogFile = File(context.filesDir, "pain_logs.json")
+    private val customStrengthFile = File(context.filesDir, "strength_sessions.json")
 
     private val _strengthProfile = MutableStateFlow(StrengthProfile())
     val strengthProfile: StateFlow<StrengthProfile> = _strengthProfile
@@ -47,6 +48,9 @@ class Repository(context: Context) {
     val strengthPlan: StateFlow<SavedStrengthPlan?> = _strengthPlan
     private val _painLogs = MutableStateFlow<List<PainLog>>(emptyList())
     val painLogs: StateFlow<List<PainLog>> = _painLogs
+    /** Séances de renfo construites à la main (hors plan IA). */
+    private val _customStrength = MutableStateFlow<List<com.mathieu.madtrainer.coach.StrengthSession>>(emptyList())
+    val customStrength: StateFlow<List<com.mathieu.madtrainer.coach.StrengthSession>> = _customStrength
 
     private val bodyFile = File(context.filesDir, "body.json")
     /** Pesées et FC de repos importées de Health Connect. */
@@ -83,6 +87,9 @@ class Repository(context: Context) {
         _strengthProfile.value = runCatching { json.decodeFromString(StrengthProfile.serializer(), strengthProfileFile.readText()) }
             .getOrDefault(StrengthProfile())
         _strengthPlan.value = runCatching { json.decodeFromString(SavedStrengthPlan.serializer(), strengthPlanFile.readText()) }.getOrNull()
+        _customStrength.value = runCatching {
+            json.decodeFromString(ListSerializer(com.mathieu.madtrainer.coach.StrengthSession.serializer()), customStrengthFile.readText())
+        }.getOrDefault(emptyList())
         _painLogs.value = runCatching { json.decodeFromString(ListSerializer(PainLog.serializer()), painLogFile.readText()) }
             .getOrDefault(emptyList())
         _strava.value = runCatching { json.decodeFromString(StravaCache.serializer(), stravaFile.readText()) }
@@ -155,6 +162,23 @@ class Repository(context: Context) {
     suspend fun saveStrengthPlan(p: SavedStrengthPlan) = withContext(Dispatchers.IO) {
         strengthPlanFile.writeText(json.encodeToString(SavedStrengthPlan.serializer(), p))
         _strengthPlan.value = p
+    }
+
+    /** Ajoute ([index] null) ou remplace une séance de renfo personnelle. */
+    suspend fun saveCustomStrength(index: Int?, session: com.mathieu.madtrainer.coach.StrengthSession) = withContext(Dispatchers.IO) {
+        val list = _customStrength.value.toMutableList()
+        if (index != null && index in list.indices) list[index] = session else list += session
+        writeCustomStrength(list)
+    }
+
+    suspend fun deleteCustomStrength(index: Int) = withContext(Dispatchers.IO) {
+        if (index !in _customStrength.value.indices) return@withContext
+        writeCustomStrength(_customStrength.value.toMutableList().also { it.removeAt(index) })
+    }
+
+    private fun writeCustomStrength(list: List<com.mathieu.madtrainer.coach.StrengthSession>) {
+        customStrengthFile.writeText(json.encodeToString(ListSerializer(com.mathieu.madtrainer.coach.StrengthSession.serializer()), list))
+        _customStrength.value = list
     }
 
     suspend fun addPainLog(l: PainLog) = withContext(Dispatchers.IO) {

@@ -210,6 +210,10 @@ fun StrengthSection(vm: AppViewModel) {
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
+                                IconButton(onClick = {
+                                    vm.saveCustomStrength(null, sess.copy(day = "", week = 1))
+                                    Toast.makeText(context, "Copiée dans Programmes › Renfo", Toast.LENGTH_SHORT).show()
+                                }) { Icon(Icons.Filled.ContentCopy, "Copier dans mes séances") }
                                 IconButton(onClick = { toStart = sess }) { Icon(Icons.Filled.PlayArrow, "Lancer") }
                             }
                             SessionExercises(sess, vm)
@@ -245,31 +249,7 @@ fun StrengthSection(vm: AppViewModel) {
     }
 
     toStart?.let { sess ->
-        var before by remember(sess) { mutableFloatStateOf(sp.painLevel.toFloat()) }
-        AlertDialog(
-            onDismissRequest = { toStart = null },
-            title = { Text(sess.name) },
-            text = {
-                Column {
-                    Text("Douleur actuelle : ${before.toInt()}/10")
-                    Slider(value = before, onValueChange = { before = it }, valueRange = 0f..10f, steps = 9)
-                    if (before >= 7) {
-                        Text(
-                            "Douleur élevée : préfère le repos ou les versions les plus faciles, et demande un avis médical si elle persiste.",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.startStrength(sess, before.toInt())
-                    toStart = null
-                }) { Text("Démarrer") }
-            },
-            dismissButton = { TextButton(onClick = { toStart = null }) { Text("Annuler") } },
-        )
+        StrengthStartDialog(sess, sp.painLevel, onStart = { vm.startStrength(sess, it) }, onDismiss = { toStart = null })
     }
 }
 
@@ -405,4 +385,34 @@ private fun SessionExercises(sess: StrengthSession, vm: AppViewModel) {
             }
         }
     }
+}
+
+/** Lancement d'une séance de renfo : douleur actuelle (suivi avant / après), puis lecteur plein écran. */
+@Composable
+fun StrengthStartDialog(sess: StrengthSession, initialPain: Int, onStart: (painBefore: Int) -> Unit, onDismiss: () -> Unit) {
+    var before by remember(sess) { mutableFloatStateOf(initialPain.toFloat()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(sess.name) },
+        text = {
+            Column {
+                Text("Douleur actuelle : ${before.toInt()}/10")
+                Slider(value = before, onValueChange = { before = it }, valueRange = 0f..10f, steps = 9)
+                if (before >= 7) {
+                    Text(
+                        "Douleur élevée : préfère le repos ou les versions les plus faciles, et demande un avis médical si elle persiste.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onStart(before.toInt())
+                onDismiss()
+            }) { Text("Démarrer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }

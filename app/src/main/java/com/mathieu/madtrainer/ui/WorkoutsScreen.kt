@@ -53,7 +53,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.coach.StrengthPlayer
+import com.mathieu.madtrainer.coach.StrengthSession
 import com.mathieu.madtrainer.data.StepMode
+import com.mathieu.madtrainer.data.WeekPlanner
 import com.mathieu.madtrainer.data.Sport
 import com.mathieu.madtrainer.data.formatPace
 import com.mathieu.madtrainer.data.Workout
@@ -68,6 +71,29 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
     val sport = settings.sport
     val workouts = allWorkouts.filter { it.sport == sport }
     var editing by remember { mutableStateOf<Workout?>(null) }
+    val customStrength by vm.repo.customStrength.collectAsStateWithLifecycle()
+    val strengthProfile by vm.repo.strengthProfile.collectAsStateWithLifecycle()
+    // Séance de renfo en cours d'édition : index (null = nouvelle) + contenu
+    var editingStrength by remember { mutableStateOf<Pair<Int?, StrengthSession>?>(null) }
+    var toStart by remember { mutableStateOf<StrengthSession?>(null) }
+
+    editingStrength?.let { (idx, sess) ->
+        StrengthSessionEditor(
+            initial = sess,
+            catalog = vm.exerciseCatalog,
+            profile = strengthProfile,
+            onSave = {
+                vm.saveCustomStrength(idx, it)
+                editingStrength = null
+            },
+            onCancel = { editingStrength = null },
+            allowNoDay = true,
+        )
+        return
+    }
+    toStart?.let { sess ->
+        StrengthStartDialog(sess, strengthProfile.painLevel, onStart = { vm.startStrength(sess, it) }, onDismiss = { toStart = null })
+    }
 
     editing?.let { w ->
         WorkoutEditor(
@@ -142,6 +168,59 @@ fun WorkoutsScreen(vm: AppViewModel, onStart: () -> Unit) {
                                 )
                             }
                         }
+                    }
+                }
+            }
+            item {
+                ScreenHeader("Renfo", eyebrow = "${customStrength.size} séance(s) perso", modifier = Modifier.padding(top = 12.dp)) {
+                    OutlinedButton(onClick = { editingStrength = null to StrengthSession(name = "") }) {
+                        Icon(Icons.Filled.Add, null)
+                        Text(" Créer")
+                    }
+                }
+            }
+            if (customStrength.isEmpty()) {
+                item {
+                    Text(
+                        "Construis ta séance à partir de la banque de 876 exercices : recherche, filtres par muscle et matériel, " +
+                            "et conseils d'association en direct.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Night.Muted,
+                    )
+                }
+            }
+            itemsIndexed(customStrength) { i, sess ->
+                NightCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SportBadge(null)
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(sess.name, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                            Text(
+                                "${sess.exercises.size} exercices · " +
+                                    sess.exercises.take(3).joinToString { it.name } + if (sess.exercises.size > 3) "…" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Night.Muted,
+                                maxLines = 2,
+                            )
+                        }
+                        Text(
+                            formatDuration(StrengthPlayer.estimatedSeconds(sess)),
+                            fontFamily = Display, fontWeight = FontWeight.Bold, style = NumberStyle,
+                            modifier = Modifier.padding(end = 10.dp),
+                        )
+                        PlayButton(onClick = { toStart = sess })
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Pill(
+                            if (WeekPlanner.dayIndex(sess.day) >= 0) "Chaque ${sess.day.lowercase()}" else "Non planifiée",
+                            if (WeekPlanner.dayIndex(sess.day) >= 0) Night.AccentText else Night.Muted,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { editingStrength = i to sess }) { Icon(Icons.Filled.Edit, "Modifier", tint = Night.Muted) }
+                        IconButton(onClick = { vm.saveCustomStrength(null, sess.copy(name = sess.name + " (copie)")) }) {
+                            Icon(Icons.Filled.ContentCopy, "Dupliquer", tint = Night.Muted)
+                        }
+                        IconButton(onClick = { vm.deleteCustomStrength(i) }) { Icon(Icons.Filled.Delete, "Supprimer", tint = Night.Muted) }
                     }
                 }
             }

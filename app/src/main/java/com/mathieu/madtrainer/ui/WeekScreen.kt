@@ -87,6 +87,8 @@ private data class WeekItem(
     val strength: StrengthSession? = null,
     /** Position de la séance de renfo dans le plan (pour la modifier) */
     val strengthIndex: Int? = null,
+    /** Position de la séance de renfo perso (récurrente chaque semaine) */
+    val customIndex: Int? = null,
     val autoDone: Boolean,
 )
 
@@ -120,6 +122,7 @@ fun WeekScreen(
     val plan by vm.repo.globalPlan.collectAsStateWithLifecycle()
     val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
     val strengthPlan by vm.repo.strengthPlan.collectAsStateWithLifecycle()
+    val customStrength by vm.repo.customStrength.collectAsStateWithLifecycle()
     val sessions by vm.repo.sessions.collectAsStateWithLifecycle()
     val painLogs by vm.repo.painLogs.collectAsStateWithLifecycle()
     val done by vm.repo.done.collectAsStateWithLifecycle()
@@ -133,6 +136,7 @@ fun WeekScreen(
 
     var editingWorkout by remember { mutableStateOf<Workout?>(null) }
     var editingStrength by remember { mutableStateOf<Pair<Int, StrengthSession>?>(null) }
+    var editingCustom by remember { mutableStateOf<Pair<Int, StrengthSession>?>(null) }
     var confirmShift by remember { mutableStateOf<Int?>(null) }
 
     // Éditeurs plein écran
@@ -144,15 +148,25 @@ fun WeekScreen(
         return
     }
     editingStrength?.let { (idx, s) ->
-        StrengthSessionEditor(s, vm.exerciseCatalog, onSave = {
+        StrengthSessionEditor(s, vm.exerciseCatalog, sp, onSave = {
             vm.updateStrengthSession(idx, it)
             editingStrength = null
         }, onCancel = { editingStrength = null })
         return
     }
+    editingCustom?.let { (idx, s) ->
+        StrengthSessionEditor(s, vm.exerciseCatalog, sp, onSave = {
+            vm.saveCustomStrength(idx, it)
+            editingCustom = null
+        }, onCancel = { editingCustom = null }, allowNoDay = true)
+        return
+    }
 
     val now = System.currentTimeMillis()
-    val ref = plan?.createdAt ?: strengthPlan?.createdAt
+    // Séances de renfo perso placées sur un jour : reviennent chaque semaine, même sans plan
+    val scheduledCustom = customStrength.withIndex().filter { WeekPlanner.dayIndex(it.value.day) >= 0 }
+    val hasPlan = plan != null || strengthPlan != null
+    val ref = plan?.createdAt ?: strengthPlan?.createdAt ?: if (scheduledCustom.isNotEmpty()) WeekPlanner.mondayOf(now) else null
     val planWorkouts = plan?.let { p -> workouts.filter { it.id in p.workoutIds } }.orEmpty()
     val maxWeek = maxOf(
         planWorkouts.maxOfOrNull { it.planWeek ?: 1 } ?: 1,
@@ -190,9 +204,17 @@ fun WeekScreen(
                 }
             }
             // Décaler tout le plan (ex. semaine chargée, vacances, blessure)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = { confirmShift = -1 }, modifier = Modifier.weight(1f)) { Text("Avancer d'1 sem.", maxLines = 1) }
-                OutlinedButton(onClick = { confirmShift = 1 }, modifier = Modifier.weight(1f)) { Text("Reporter d'1 sem.", maxLines = 1) }
+            if (hasPlan) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { confirmShift = -1 }, modifier = Modifier.weight(1f)) { Text("Avancer d'1 sem.", maxLines = 1) }
+                    OutlinedButton(onClick = { confirmShift = 1 }, modifier = Modifier.weight(1f)) { Text("Reporter d'1 sem.", maxLines = 1) }
+                }
+            } else {
+                Text(
+                    "Pas encore de plan cardio : génère-le dans l'onglet Coach. Tes séances de renfo perso apparaissent ici chaque semaine.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Night.Muted,
+                )
             }
             adjustment?.takeIf { it.action != AdjustAction.KEEP && !adjustedThisWeek }?.let { PlanAdjustCard(vm, it, adjustedThisWeek) }
 
@@ -232,6 +254,22 @@ fun WeekScreen(
                         )
                     }
                 }
+                scheduledCustom.forEach { (idx, s) ->
+                    add(
+                        WeekItem(
+                            key = WeekPlanner.customDoneKey(start, idx, s.name),
+                            title = s.name,
+                            subtitle = "Renfo perso · chaque ${s.day.lowercase()} · ${s.exercises.size} exercices",
+                            icon = Icons.Filled.SelfImprovement,
+                            minutes = StrengthPlayer.estimatedSeconds(s) / 60,
+                            sport = null,
+                            day = s.day,
+                            strength = s,
+                            customIndex = idx,
+                            autoDone = logsInWeek.any { it.sessionName == s.name },
+                        ),
+                    )
+                }
             }
 
             val isDone: (WeekItem) -> Boolean = { it.autoDone || it.key in done }
@@ -260,6 +298,8 @@ fun WeekScreen(
                 val si = item.strengthIndex
                 val st = item.strength
                 if (si != null && st != null) vm.updateStrengthSession(si, st.copy(day = dayName, week = targetWeek))
+                val ci = item.customIndex
+                if (ci != null && st != null) vm.saveCustomStrength(ci, st.copy(day = dayName))
             }
 
             val byDay = items.groupBy { WeekPlanner.dayIndex(it.day) }
@@ -318,6 +358,8 @@ fun WeekScreen(
                                     val si = item.strengthIndex
                                     val st = item.strength
                                     if (si != null && st != null) editingStrength = si to st
+                                    val ci = item.customIndex
+                                    if (ci != null && st != null) editingCustom = ci to st
                                 },
                                 onPlay = {
                                     val w = item.workout
@@ -335,6 +377,11 @@ fun WeekScreen(
                                     onOpenSession()
                                 },
                                 onMove = { dayIdx, targetWeek -> moveTo(item, dayIdx, targetWeek) },
+                                onUnschedule = item.customIndex?.let { ci ->
+                                    fun() {
+                                        item.strength?.let { st -> vm.saveCustomStrength(ci, st.copy(day = "")) }
+                                    }
+                                },
                             )
                         }
                     }
@@ -382,6 +429,8 @@ private fun WeekCard(
     onPlay: () -> Unit,
     onSwapSport: (Workout) -> Unit,
     onMove: (day: Int, week: Int) -> Unit,
+    /** Séance perso récurrente : la retirer de la semaine (null = séance du plan) */
+    onUnschedule: (() -> Unit)? = null,
 ) {
     val dragging = drag.draggedKey == item.key
     var centerY by remember { mutableFloatStateOf(0f) }
@@ -461,15 +510,21 @@ private fun WeekCard(
                     }
                     HorizontalDivider()
                     WeekPlanner.DAYS.forEachIndexed { i, d ->
-                        DropdownMenuItem(text = { Text("Déplacer au $d") }, onClick = { menu = false; onMove(i, week) })
+                        DropdownMenuItem(
+                            text = { Text(if (onUnschedule != null) "Chaque ${d.lowercase()}" else "Déplacer au $d") },
+                            onClick = { menu = false; onMove(i, week) },
+                        )
                     }
-                    if (week < maxWeek) {
+                    if (onUnschedule != null) {
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Retirer de la semaine") }, onClick = { menu = false; onUnschedule() })
+                    } else if (week < maxWeek) {
                         DropdownMenuItem(text = { Text("Reporter à la semaine suivante") }, onClick = {
                             menu = false
                             onMove(WeekPlanner.dayIndex(item.day).coerceAtLeast(0), week + 1)
                         })
                     }
-                    if (week > 1) {
+                    if (onUnschedule == null && week > 1) {
                         DropdownMenuItem(text = { Text("Avancer à la semaine précédente") }, onClick = {
                             menu = false
                             onMove(WeekPlanner.dayIndex(item.day).coerceAtLeast(0), week - 1)

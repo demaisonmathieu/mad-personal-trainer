@@ -30,4 +30,14 @@ class WeekPlannerTest {
         assertEquals(2, z[1]) // 115 bpm = Z2
         assertEquals(1, z[3]) // 150 bpm = Z4
     }
+
+    @Test
+    fun customDoneKeyIsPerCalendarWeek() {
+        val c = Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 18, 15, 0) } // mercredi
+        val wed = c.timeInMillis
+        val monday = WeekPlanner.mondayOf(wed)
+        assertEquals(WeekPlanner.customDoneKey(monday, 0, "Gainage"), WeekPlanner.customDoneKey(wed, 0, "Gainage"))
+        val nextWeek = WeekPlanner.customDoneKey(monday + WeekPlanner.WEEK_MS, 0, "Gainage")
+        assertEquals(false, nextWeek == WeekPlanner.customDoneKey(monday, 0, "Gainage"))
+    }
 }

@@ -51,6 +51,31 @@ class VmaTest {
         assertEquals(14.0, est.vmaKmh, 0.2)
     }
 
+    /** Footing de [min] min qui alterne 7,6 et 8,4 km/h chaque minute, altitude GPS qui ondule de ±8 m. */
+    private fun jog(min: Int, hr: Int?, start: Long = 0): SessionRecord {
+        var d = 0.0
+        val samples = (0..min * 60).map { t ->
+            if (t > 0) d += (if ((t / 60) % 2 == 0) 7.6 else 8.4) / 3.6
+            Sample(t = t, hr = hr, distanceM = d.roundToInt(), alt = 100 + 8 * kotlin.math.sin(t / 60.0))
+        }
+        return SessionRecord(startedAt = start, durationSec = min * 60, distanceM = d.roundToInt(), sport = Sport.RUNNING, samples = samples)
+    }
+
+    @Test
+    fun easyJogWithNoisyAltitudeIsEstimatedFromHeartRate() {
+        // 150 bpm = 71,4 % de FCR → environ 8 / 0,714 ≈ 11,2 km/h, et non la meilleure vitesse 6 min (≈ 8 km/h)
+        val est = Vma.estimate(jog(40, 150), maxHr = 190, restingHr = 50)!!
+        assertTrue(est.method, est.fromHeartRate)
+        assertEquals(11.2, est.vmaKmh, 0.7)
+
+        // Des sorties sans cardio (borne basse ≈ 8 km/h) ne tirent pas la VMA retenue vers le bas
+        val day = 24L * 3600 * 1000
+        val runs = listOf(jog(40, 150, 0), jog(40, null, day), jog(40, 150, 2 * day), jog(40, null, 3 * day), jog(40, 150, 4 * day))
+        val retained = Vma.recent(runs, 190, 50)!!
+        assertEquals(3, retained.runs)
+        assertEquals(11.2, retained.vmaKmh, 0.7)
+    }
+
     @Test
     fun gpsJumpDoesNotInflateBestSixMinutes() {
         val samples = (0..20 * 60).map { t ->

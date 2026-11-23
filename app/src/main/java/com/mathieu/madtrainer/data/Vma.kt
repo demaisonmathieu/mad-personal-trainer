@@ -8,10 +8,13 @@ import kotlin.math.roundToInt
  *
  * - Cardio : par minute de course (après 5 min d'échauffement), la vitesse rapportée au % de FC de réserve
  *   (formule de Karvonen ; %FCR ≈ %VO2 de réserve, Swain) donne la vitesse qu'on tiendrait à 100 %. On garde la médiane.
- *   Ne comptent que les minutes courues (≥ 7 km/h), à vitesse stable depuis 2 min (le cardio a rattrapé l'effort),
- *   sur le plat (pente ≤ 4 %) et entre 60 et 95 % de FCR (au-dessous, l'extrapolation jusqu'à 100 % amplifie les erreurs).
+ *   Ne comptent que les minutes courues (≥ 6,5 km/h), à vitesse proche de la minute précédente (±15 %, le cardio a suivi),
+ *   hors côtes marquées (pente > 6 % sur 3 min : l'altitude GPS est trop bruitée sur 1 min) et entre 60 et 98 % de FCR
+ *   (au-dessous, l'extrapolation jusqu'à 100 % amplifie les erreurs).
  * - Allure : la meilleure vitesse tenue 6 min est une borne basse de la VMA (demi-Cooper), sans saut de GPS.
- * - VMA retenue : médiane des estimations des dernières courses, pour ne pas suivre les variations d'une sortie à l'autre.
+ *   Seule, elle sous-estime nettement la VMA d'une sortie en footing : elle ne sert que si le cardio manque.
+ * - VMA retenue : médiane des estimations des dernières courses (celles estimées au cardio en priorité),
+ *   pour ne pas suivre les variations d'une sortie à l'autre.
  * VO2max ≈ 3,5 × VMA (Léger).
  */
 data class VmaEstimate(
@@ -23,6 +26,8 @@ data class VmaEstimate(
     val reliable: Boolean,
     /** Nombre de courses prises en compte (1 pour une estimation sur une seule sortie). */
     val runs: Int = 1,
+    /** Estimée par le cardio (sinon : borne basse tirée de la meilleure vitesse tenue 6 min). */
+    val fromHeartRate: Boolean = false,
 )
 
 /** Une ligne du tableau d'allures : [fastSecKm] à [pctHigh] % de VMA, [slowSecKm] à [pctLow] %. */
@@ -31,9 +36,9 @@ data class PaceBand(val name: String, val use: String, val pctLow: Int, val pctH
 object Vma {
     private const val WINDOW = 60
     private const val WARMUP = 300
-    private const val MIN_RUN_KMH = 7.0
-    private const val STABLE_TOL = 0.10
-    private const val MAX_GRADE = 0.04
+    private const val MIN_RUN_KMH = 6.5
+    private const val STABLE_TOL = 0.15
+    private const val MAX_GRADE = 0.06
     private const val MAX_GPS_KMH = 25.0
     const val RECENT_RUNS = 5
     const val RECENT_DAYS = 60
@@ -68,17 +73,19 @@ object Vma {
         val ratios = mutableListOf<Double>()
         speeds.forEach { (t0, kmh) ->
             if (t0 < start + WARMUP || kmh !in MIN_RUN_KMH..MAX_GPS_KMH) return@forEach
-            // Vitesse stable sur les 2 minutes précédentes : le cardio suit l'effort avec 1 à 2 min de retard
-            val stable = listOf(t0 - WINDOW, t0 - 2 * WINDOW).all { p -> speeds[p]?.let { abs(it - kmh) <= kmh * STABLE_TOL } == true }
-            if (!stable) return@forEach
-            val a0 = altByT[t0]
-            val a1 = altByT[t0 + WINDOW]
-            val dist = kmh / 3.6 * WINDOW
-            if (a0 != null && a1 != null && dist > 0 && abs(a1 - a0) / dist > MAX_GRADE) return@forEach
+            // Vitesse proche de la minute précédente : le cardio a suivi (exclut relances, arrêts et reprises après la marche)
+            val prev = speeds[t0 - WINDOW] ?: return@forEach
+            if (abs(prev - kmh) > kmh * STABLE_TOL) return@forEach
+            // Pente sur 3 min (de la minute précédente à la suivante) : sur 1 min, le bruit de l'altitude GPS l'emporte
+            val a0 = altByT[t0 - WINDOW]
+            val a1 = altByT[t0 + 2 * WINDOW]
+            val d0 = byT[t0 - WINDOW]?.distanceM
+            val d1 = byT[t0 + 2 * WINDOW]?.distanceM
+            if (a0 != null && a1 != null && d0 != null && d1 != null && d1 - d0 > 200 && abs(a1 - a0) / (d1 - d0) > MAX_GRADE) return@forEach
             val hrs = (t0 until t0 + WINDOW).mapNotNull { hrByT[it] }.filter { it > 40 }
             if (hrs.size < WINDOW / 2) return@forEach
             val pct = (hrs.average() - rest) / (maxHr - rest).toDouble()
-            if (pct in 0.60..0.95) ratios += kmh / pct
+            if (pct in 0.60..0.98) ratios += kmh / pct
         }
         val fromHr = ratios.takeIf { it.size >= 5 }?.sorted()?.let { it[it.size / 2] }
         val best6 = bestSpeed(withDist, 6 * 60)
@@ -89,9 +96,12 @@ object Vma {
             fromHr != null && best6 != null && best6 >= fromHr -> "meilleure vitesse tenue 6 min (${fmt(best6)} km/h), au-dessus de l'estimation par le cardio"
             fromHr != null -> "vitesse rapportée à ta FC de réserve sur ${ratios.size} min de course régulière (FC max $maxHr, repos " +
                 (if (restingHr == null) "supposée à 60" else "$restingHr") + ")"
-            else -> "meilleure vitesse tenue 6 min, sans cardio exploitable : valeur minimale"
+            else -> "meilleure vitesse tenue 6 min, valeur minimale : cardio exploitable sur ${ratios.size} min seulement (5 nécessaires)"
         }
-        return VmaEstimate(round1(vma), round1(vo2max(vma)), method, fromHr != null && restingHr != null && ratios.size >= 10)
+        return VmaEstimate(
+            round1(vma), round1(vo2max(vma)), method, fromHr != null && restingHr != null && ratios.size >= 10,
+            fromHeartRate = fromHr != null,
+        )
     }
 
     /**
@@ -100,18 +110,18 @@ object Vma {
      */
     fun recent(runs: List<SessionRecord>, maxHr: Int, restingHr: Int?, until: Long = Long.MAX_VALUE): VmaEstimate? {
         val last = runs.filter { it.sport == Sport.RUNNING && it.startedAt <= until }.maxOfOrNull { it.startedAt } ?: return null
-        val ests = runs.asSequence()
+        val all = runs
             .filter { it.sport == Sport.RUNNING && it.startedAt <= until && it.startedAt >= last - RECENT_DAYS * 24L * 3600 * 1000 }
             .sortedByDescending { it.startedAt }
             .mapNotNull { estimate(it, maxHr, restingHr) }
-            .take(RECENT_RUNS)
-            .toList()
+        // Les bornes basses (meilleure vitesse 6 min, sans cardio) tireraient la médiane vers le bas : on ne les garde qu'à défaut
+        val ests = all.filter { it.fromHeartRate }.ifEmpty { all }.take(RECENT_RUNS)
         if (ests.isEmpty()) return null
         val sorted = ests.map { it.vmaKmh }.sorted()
         val n = sorted.size
         val med = if (n % 2 == 1) sorted[n / 2] else (sorted[n / 2 - 1] + sorted[n / 2]) / 2
         val method = if (n == 1) ests[0].method else "médiane de tes $n dernières courses (de ${fmt(sorted.first())} à ${fmt(sorted.last())} km/h)"
-        return VmaEstimate(round1(med), round1(vo2max(med)), method, n >= 3 && ests.count { it.reliable } >= 2, n)
+        return VmaEstimate(round1(med), round1(vo2max(med)), method, n >= 3 && ests.count { it.reliable } >= 2, n, ests.any { it.fromHeartRate })
     }
 
     /**

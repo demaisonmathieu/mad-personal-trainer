@@ -51,7 +51,7 @@ object SessionReport {
     }
 
     /** Index d'étape de chaque échantillon (enregistré, sinon déduit des durées). */
-    private fun stepIndexOf(s: Sample, steps: List<WorkoutStep>): Int? {
+    internal fun stepIndexOf(s: Sample, steps: List<WorkoutStep>): Int? {
         s.step?.let { return it }
         if (steps.isEmpty()) return null
         var acc = 0
@@ -107,25 +107,8 @@ object SessionReport {
         }
     }
 
-    /** Dérive cardiaque : hausse du cardio par unité d'effort entre la 1re et la 2e moitié (séances ≥ 20 min). */
-    fun hrDrift(rec: SessionRecord): Double? {
-        if (rec.durationSec < 20 * 60) return null
-        val half = rec.samples.size / 2
-        fun ratio(part: List<Sample>): Double? {
-            val pairs = part.mapNotNull { s ->
-                val hr = s.hr?.takeIf { it > 60 } ?: return@mapNotNull null
-                val effort = when (rec.sport) {
-                    Sport.ELLIPTICAL -> s.power?.takeIf { it > 0 }?.toDouble()
-                    Sport.RUNNING -> s.paceSecPerKm?.takeIf { it > 0 }?.let { 60_000.0 / it }
-                } ?: return@mapNotNull null
-                hr / effort
-            }
-            return if (pairs.size < 60) null else pairs.average()
-        }
-        val a = ratio(rec.samples.take(half)) ?: return null
-        val b = ratio(rec.samples.drop(half)) ?: return null
-        return (b / a - 1) * 100
-    }
+    /** Dérive cardiaque (%) à effort comparable, hors échauffement, retour au calme, arrêts et côtes (voir [HrDrift]). */
+    fun hrDrift(rec: SessionRecord): Double? = HrDrift.compute(rec)?.pct
 
     fun build(rec: SessionRecord, history: List<SessionRecord>, zones: HrZones): ProgressReport {
         val out = mutableListOf<String>()
@@ -192,8 +175,18 @@ object SessionReport {
         }
 
         // Dérive cardiaque
-        val drift = hrDrift(rec)
-        if (drift != null && drift >= 5) out += "Dérive cardiaque de ${drift.roundToInt()} % en 2e moitié : endurance à consolider (hydratation, allure de départ)"
+        val driftRes = HrDrift.compute(rec)
+        val drift = driftRes?.pct
+        if (driftRes != null) {
+            val basis = if (driftRes.steady) "sur ${driftRes.minutes} min d'effort régulier" else "à effort égal sur ${driftRes.minutes} min comparées"
+            val p = driftRes.pct.roundToInt()
+            out += when {
+                p >= 8 -> "Forte dérive cardiaque : +$p % de cardio pour le même effort en 2e partie ($basis). Départ trop rapide, chaleur, hydratation ou fatigue"
+                p >= 5 -> "Dérive cardiaque de +$p % en 2e partie ($basis) : endurance à consolider à cette intensité (hydratation, allure de départ)"
+                p <= -5 -> "Cardio en baisse de ${-p} % à effort égal en 2e partie ($basis) : échauffement trop court ou capteur cardio instable en début de séance"
+                else -> "Cardio stable à effort égal (dérive ${if (p > 0) "+" else ""}$p %, $basis) : bonne endurance à cette intensité"
+            }
+        }
 
         // Volume de la semaine
         val monday = WeekPlanner.mondayOf(rec.startedAt)
@@ -232,7 +225,13 @@ object SessionReport {
         })
         appendLine("- Cardio moyen ${rec.avgHr ?: "?"} bpm, max ${rec.maxHr ?: rec.samples.mapNotNull { it.hr }.maxOrNull() ?: "?"} bpm")
         appendLine("- Temps par zone : " + report.zoneMinutes.mapIndexed { i, m -> "Z${i + 1} $m min" }.joinToString(", "))
-        report.hrDriftPct?.let { appendLine("- Dérive cardiaque 2e moitié : ${"%.1f".format(Locale.FRANCE, it)} %") }
+        HrDrift.compute(rec)?.let {
+            appendLine(
+                "- Dérive cardiaque (cardio par unité d'effort, 2e partie vs 1re, hors échauffement, arrêts et changements de rythme) : " +
+                    "${"%+.1f".format(Locale.FRANCE, it.pct)} % sur ${it.minutes} min " +
+                    if (it.steady) "d'effort régulier" else "comparées palier par palier (effort variable)",
+            )
+        }
         if (report.steps.isNotEmpty()) {
             appendLine("- Étapes (consigne → réalisé) :")
             report.steps.forEach { s ->

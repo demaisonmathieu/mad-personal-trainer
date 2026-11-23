@@ -23,20 +23,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mathieu.madtrainer.AppViewModel
+import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.data.SessionRecord
+import com.mathieu.madtrainer.health.sourceLabel
 import com.mathieu.madtrainer.data.Vma
 import com.mathieu.madtrainer.data.formatPace
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** VMA et VO2max estimées sur cette course, avec mise à jour du tableau d'allures. */
 @Composable
 fun VmaCard(rec: SessionRecord, vm: AppViewModel) {
     val profile by vm.repo.profile.collectAsStateWithLifecycle()
-    val est = remember(rec.id, profile.estimatedMaxHr, profile.restingHr) { vm.estimateVma(rec) }
+    val sessions by vm.repo.sessions.collectAsStateWithLifecycle()
+    val single = remember(rec.id, profile.estimatedMaxHr, profile.restingHr) { vm.estimateVma(rec) }
+    val est = remember(rec.id, sessions.size, profile.estimatedMaxHr, profile.restingHr) { vm.recentVma(rec) }
     val saved = profile.vmaKmh
+    val body by vm.repo.body.collectAsStateWithLifecycle()
+    // La montre calcule sa VO2max après la course : on accepte une mesure jusqu'au lendemain
+    val watch = remember(body.vo2max, rec.startedAt) { BodyStats.watchVo2max(body.vo2max, rec.startedAt + 24L * 3600 * 1000) }
     if (est == null && saved == null) return
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -47,16 +55,34 @@ fun VmaCard(rec: SessionRecord, vm: AppViewModel) {
             if (est != null) {
                 StatRow(
                     listOf(
-                        "VMA estimée" to "${Vma.fmt(est.vmaKmh)} km/h",
+                        "Cette course" to (single?.let { "${Vma.fmt(it.vmaKmh)} km/h" } ?: "--"),
+                        (if (est.runs > 1) "VMA (${est.runs} courses)" else "VMA estimée") to "${Vma.fmt(est.vmaKmh)} km/h",
                         "VO2max" to Vma.fmt(est.vo2max),
-                        "Enregistrée" to (saved?.let { "${Vma.fmt(it)} km/h" } ?: "--"),
                     ),
                 )
                 Text(
-                    "Méthode : ${est.method}." + if (!est.reliable) " Estimation indicative : une sortie avec cardio, ou un test (6 min à fond), sera plus précise." else "",
+                    "Méthode : ${est.method}." +
+                        (if (est.runs > 1) single?.let { " Sur cette course seule : ${it.method}." } ?: "" else "") +
+                        if (!est.reliable) " Estimation indicative : quelques sorties avec cardio, ou un test (6 min à fond), la préciseront." else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (watch != null) {
+                    val gap = ((est.vo2max / watch.value - 1) * 100).roundToInt()
+                    val df = SimpleDateFormat("d MMM", Locale.FRANCE)
+                    Text(
+                        "Montre (${sourceLabel(watch.source)}, ${df.format(Date(watch.time))}) : VO2max ${Vma.fmt(watch.value)}, " +
+                            "soit une VMA d'environ ${Vma.fmt(watch.value / 3.5)} km/h. " +
+                            when {
+                                abs(gap) <= 5 -> "L'app est en accord avec la montre."
+                                else -> "L'app est ${if (gap > 0) "au-dessus" else "en dessous"} de ${abs(gap)} %. " +
+                                    "Vérifie que ta FC max (${profile.estimatedMaxHr} bpm${if (profile.maxHr == null) ", estimée d'après ton âge" else ""}) " +
+                                    "est la même que dans ${sourceLabel(watch.source)} : c'est la première source d'écart."
+                            },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (saved == null || abs(saved - est.vmaKmh) >= 0.1) {
                     FilledTonalButton(onClick = { vm.saveVma(est.vmaKmh, rec.startedAt) }) {
                         Text(if (saved == null) "Utiliser pour mes allures" else "Mettre à jour mes allures (${Vma.fmt(saved)} → ${Vma.fmt(est.vmaKmh)} km/h)")

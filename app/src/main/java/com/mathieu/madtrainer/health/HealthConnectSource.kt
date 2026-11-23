@@ -13,20 +13,22 @@ import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.mathieu.madtrainer.data.BodyKind
 import com.mathieu.madtrainer.data.BodyPoint
 import com.mathieu.madtrainer.data.RestingHr
+import com.mathieu.madtrainer.data.Vo2MaxPoint
 import java.time.Instant
 import kotlin.reflect.KClass
 
 /** Disponibilité de Health Connect sur le téléphone. */
 enum class HealthAvailability { AVAILABLE, NEEDS_UPDATE, NOT_INSTALLED }
 
-/** Données lues : pesées brutes (balance) et FC de repos (montre). */
-data class HealthData(val points: List<BodyPoint>, val restingHr: List<RestingHr>)
+/** Données lues : pesées brutes (balance), FC de repos et VO2max (montre). */
+data class HealthData(val points: List<BodyPoint>, val restingHr: List<RestingHr>, val vo2max: List<Vo2MaxPoint> = emptyList())
 
 /** Lecture des mesures corporelles écrites dans Health Connect par les autres applis (Starfit, Zepp…). */
 class HealthConnectSource(private val context: Context) {
@@ -37,6 +39,7 @@ class HealthConnectSource(private val context: Context) {
         private val types: List<KClass<out Record>> = listOf(
             WeightRecord::class, BodyFatRecord::class, LeanBodyMassRecord::class, BoneMassRecord::class,
             BodyWaterMassRecord::class, BasalMetabolicRateRecord::class, HeightRecord::class, RestingHeartRateRecord::class,
+            Vo2MaxRecord::class,
         )
 
         /** Permissions de lecture demandées (toutes facultatives : on lit ce qui est autorisé). */
@@ -95,7 +98,12 @@ class HealthConnectSource(private val context: Context) {
                 RestingHr(it.time.toEpochMilli(), it.beatsPerMinute.toInt(), it.metadata.dataOrigin.packageName)
             }
         } else emptyList()
-        return HealthData(points, resting)
+        val vo2 = if (ok(Vo2MaxRecord::class)) {
+            readAll(Vo2MaxRecord::class, since).map {
+                Vo2MaxPoint(it.time.toEpochMilli(), it.vo2MillilitersPerMinuteKilogram, it.metadata.dataOrigin.packageName)
+            }
+        } else emptyList()
+        return HealthData(points, resting, vo2)
     }
 
     private suspend fun <T : Record> readAll(type: KClass<T>, since: Instant): List<T> {

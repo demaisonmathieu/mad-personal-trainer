@@ -37,6 +37,44 @@ class VmaTest {
     }
 
     @Test
+    fun walkingAndSpeedChangesAreIgnored() {
+        // 4 min de course à 10 km/h (150 bpm) / 4 min de marche à 5,5 km/h (140 bpm) pendant 48 min
+        // Course : 150 bpm = 100/140 = 71,4 % de FCR → 10 / 0,714 = 14 km/h ; la marche ne doit pas tirer la médiane
+        var d = 0.0
+        val samples = (0..48 * 60).map { t ->
+            val running = (t / 240) % 2 == 0
+            if (t > 0) d += (if (running) 10.0 else 5.5) / 3.6
+            Sample(t = t, hr = if (running) 150 else 140, distanceM = d.roundToInt())
+        }
+        val rec = SessionRecord(startedAt = 0, durationSec = 48 * 60, distanceM = d.roundToInt(), sport = Sport.RUNNING, samples = samples)
+        val est = Vma.estimate(rec, maxHr = 190, restingHr = 50)!!
+        assertEquals(14.0, est.vmaKmh, 0.2)
+    }
+
+    @Test
+    fun gpsJumpDoesNotInflateBestSixMinutes() {
+        val samples = (0..20 * 60).map { t ->
+            val base = (t * 10.0 / 3.6).roundToInt()
+            Sample(t = t, distanceM = if (t >= 600) base + 400 else base)
+        }
+        val rec = SessionRecord(startedAt = 0, durationSec = 1200, distanceM = samples.last().distanceM!!, sport = Sport.RUNNING, samples = samples)
+        assertEquals(10.0, Vma.bestSpeed(rec.samples, 360)!!, 0.1)
+        assertEquals(10.0, Vma.estimate(rec, 190, 50)!!.vmaKmh, 0.1)
+    }
+
+    @Test
+    fun retainedVmaIsMedianOfRecentRuns() {
+        val day = 24L * 3600 * 1000
+        // 170 bpm → 14 km/h ; une sortie isolée à 143 bpm → 18 km/h ne doit pas faire monter la VMA retenue
+        val runs = listOf(170, 170, 143, 170, 170).mapIndexed { i, hr -> run(12.0, 30, hr).copy(startedAt = i * day) }
+        val est = Vma.recent(runs, maxHr = 190, restingHr = 50)!!
+        assertEquals(5, est.runs)
+        assertEquals(14.0, est.vmaKmh, 0.15)
+        // Seules les courses jusqu'à la date demandée comptent
+        assertEquals(2, Vma.recent(runs, 190, 50, until = day)!!.runs)
+    }
+
+    @Test
     fun paceTableUsesPercentOfVma() {
         val t = Vma.paceTable(15.0)
         val vma = t.last()

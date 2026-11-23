@@ -35,6 +35,10 @@ data class BodyMeasure(
 @Serializable
 data class RestingHr(val time: Long, val bpm: Int, val source: String = "")
 
+/** VO2max (ml/kg/min) calculée par la montre (Zepp) et lue dans Health Connect. */
+@Serializable
+data class Vo2MaxPoint(val time: Long, val value: Double, val source: String = "")
+
 /** Copie locale des données Health Connect (affichage hors ligne, prompts IA). */
 @Serializable
 data class BodyCache(
@@ -42,6 +46,7 @@ data class BodyCache(
     val restingHr: List<RestingHr> = emptyList(),
     val heightCm: Int? = null,
     val lastSync: Long = 0,
+    val vo2max: List<Vo2MaxPoint> = emptyList(),
 )
 
 /** Évolution d'une grandeur sur une période. */
@@ -121,6 +126,10 @@ object BodyStats {
     }
 
     /** Moyenne de la FC de repos sur les 7 derniers jours. */
+    /** Dernière VO2max de la montre mesurée au plus tard à [at] (et pas plus de 60 jours avant). */
+    fun watchVo2max(list: List<Vo2MaxPoint>, at: Long): Vo2MaxPoint? =
+        list.filter { it.time <= at && it.time >= at - 60 * DAY && it.value in 10.0..90.0 }.maxByOrNull { it.time }
+
     fun recentRestingHr(list: List<RestingHr>, now: Long): Int? =
         list.filter { it.time >= now - 7 * DAY && it.time <= now }.map { it.bpm }.takeIf { it.isNotEmpty() }?.average()?.roundToInt()
 
@@ -155,6 +164,9 @@ object BodyStats {
                 }
             }
             recentRestingHr(cache.restingHr, now)?.let { appendLine("- FC de repos (moyenne 7 jours, montre) : $it bpm") }
+            watchVo2max(cache.vo2max, now)?.let {
+                appendLine("- VO2max calculée par la montre : ${fmt(it.value)} ml/kg/min (${SimpleDateFormat("d MMMM", Locale.FRANCE).format(Date(it.time))})")
+            }
         }.trimEnd()
     }
 

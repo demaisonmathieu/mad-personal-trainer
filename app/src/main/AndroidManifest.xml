@@ -38,6 +38,7 @@
     <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
     <uses-permission android:name="android.permission.health.READ_HEIGHT" />
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_VO2_MAX" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />

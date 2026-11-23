@@ -6,6 +6,7 @@ import com.mathieu.madtrainer.data.BodyMeasure
 import com.mathieu.madtrainer.data.BodyPoint
 import com.mathieu.madtrainer.data.BodyStats
 import com.mathieu.madtrainer.data.RestingHr
+import com.mathieu.madtrainer.data.Vo2MaxPoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -100,5 +101,24 @@ class BodyMetricsTest {
         assertTrue(txt, txt.contains("Sur 30 jours : poids −"))
         assertTrue(txt, txt.contains("FC de repos (moyenne 7 jours, montre) : 55 bpm"))
         assertNull(BodyStats.describe(BodyCache(), now))
+    }
+
+    @Test
+    fun watchVo2maxIsLatestBeforeDateWithinTwoMonths() {
+        val day = 24L * 3600 * 1000
+        val list = listOf(
+            Vo2MaxPoint(0, 40.0, "com.huami.watch.hmwatchmanager"),
+            Vo2MaxPoint(70 * day, 42.0),
+            Vo2MaxPoint(80 * day, 43.5),
+            Vo2MaxPoint(85 * day, 250.0),
+        )
+        assertEquals(43.5, BodyStats.watchVo2max(list, 90 * day)!!.value, 0.0)
+        assertEquals(42.0, BodyStats.watchVo2max(list, 75 * day)!!.value, 0.0)
+        assertNull(BodyStats.watchVo2max(list, 61 * day))
+        val text = BodyStats.describe(
+            BodyCache(listOf(BodyMeasure(80 * day, weightKg = 90.0)), vo2max = list),
+            now = 90 * day,
+        )!!
+        assertTrue(text, "VO2max calculée par la montre : 43,5" in text)
     }
 }

@@ -167,6 +167,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun estimateVma(rec: SessionRecord): VmaEstimate? = Vma.estimate(rec, repo.profile.value.estimatedMaxHr, restingHr())
 
+    /** VMA retenue : médiane des dernières courses jusqu'à [rec] inclus. */
+    fun recentVma(rec: SessionRecord): VmaEstimate? =
+        Vma.recent(repo.sessions.value.filter { it.id != rec.id } + rec, repo.profile.value.estimatedMaxHr, restingHr(), until = rec.startedAt)
+
     /** Enregistre la VMA : le tableau d'allures et les séances de course générées sans IA l'utilisent ensuite. */
     fun saveVma(vmaKmh: Double, at: Long) = viewModelScope.launch {
         repo.saveProfile(repo.profile.value.copy(vmaKmh = vmaKmh, vmaDate = at))
@@ -218,7 +222,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             onSuccess = { data ->
                 val measures = BodyStats.group(data.points)
                 val height = BodyStats.latestHeightCm(data.points)
-                val cache = BodyCache(measures, data.restingHr.sortedBy { it.time }, height, System.currentTimeMillis())
+                val cache = BodyCache(measures, data.restingHr.sortedBy { it.time }, height, System.currentTimeMillis(), data.vo2max.sortedBy { it.time })
                 repo.saveBody(cache)
                 _healthUi.value = _healthUi.value.copy(syncing = false, message = applyBodyToProfile(cache))
             },

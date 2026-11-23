@@ -87,63 +87,66 @@ fun SessionScreen(vm: AppViewModel, onGoToDevice: () -> Unit) {
         onDispose { view.keepScreenOn = false }
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        MusicWidget(vm)
-        WebMiniPanel(vm)
-        if (state != ConnState.CONNECTED) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                modifier = Modifier.fillMaxWidth().clickable { onGoToDevice() },
-            ) {
-                Text(
-                    "Vélo non connecté — appuie ici pour te connecter. Tu peux quand même lancer une séance.",
-                    Modifier.padding(12.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                )
+    Column(Modifier.fillMaxSize()) {
+        // Vidéo fixée en haut : elle reste visible quand on fait défiler les chiffres
+        WebMiniPanel(vm, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
+        Column(
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MusicWidget(vm)
+            if (state != ConnState.CONNECTED) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.fillMaxWidth().clickable { onGoToDevice() },
+                ) {
+                    Text(
+                        "Vélo non connecté — appuie ici pour te connecter. Tu peux quand même lancer une séance.",
+                        Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
             }
-        }
 
-        if (state == ConnState.CONNECTED && !caps.hasFtms && !caps.legacyDomyos) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                modifier = Modifier.fillMaxWidth().clickable { onGoToDevice() },
-            ) {
-                Text(
-                    "L'appareil connecté n'est pas la console du vélo : déconnecte-le et choisis « Domyos-EL… » dans l'onglet Vélo.",
-                    Modifier.padding(12.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                )
+            if (state == ConnState.CONNECTED && !caps.hasFtms && !caps.legacyDomyos) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.fillMaxWidth().clickable { onGoToDevice() },
+                ) {
+                    Text(
+                        "L'appareil connecté n'est pas la console du vélo : déconnecte-le et choisis « Domyos-EL… » dans l'onglet Vélo.",
+                        Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
             }
-        }
 
-        summary?.let {
-            SummaryCard(it) { vm.dismissSummary() }
-            SessionReportCard(it, vm)
-        }
-
-        if (session.running) {
-            LiveElliptical(vm, session, metrics)
-            ControlPanel(vm, metrics, caps)
-            RunningButtons(vm, session)
-            SecondaryMetrics(metrics, session)
-        } else {
-            LiveMetrics(metrics, session, vm)
-            SectionTitle("Démarrer")
-            Button(onClick = { vm.startSession(null) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.PlayArrow, null)
-                Text("  Séance libre")
+            summary?.let {
+                SummaryCard(it) { vm.dismissSummary() }
+                SessionReportCard(it, vm)
             }
-            workouts.filter { it.sport == com.mathieu.madtrainer.data.Sport.ELLIPTICAL }.forEach { w ->
-                Card(Modifier.fillMaxWidth().clickable { vm.startSession(w) }) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(w.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(formatDuration(w.totalSec), style = MaterialTheme.typography.labelLarge)
+
+            if (session.running) {
+                LiveElliptical(vm, session, metrics)
+                ControlPanel(vm, metrics, caps)
+                RunningButtons(vm, session)
+                SecondaryMetrics(metrics, session)
+            } else {
+                LiveMetrics(metrics, session, vm)
+                SectionTitle("Démarrer")
+                Button(onClick = { vm.startSession(null) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.PlayArrow, null)
+                    Text("  Séance libre")
+                }
+                workouts.filter { it.sport == com.mathieu.madtrainer.data.Sport.ELLIPTICAL }.forEach { w ->
+                    Card(Modifier.fillMaxWidth().clickable { vm.startSession(w) }) {
+                        Column(Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(w.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text(formatDuration(w.totalSec), style = MaterialTheme.typography.labelLarge)
+                            }
+                            WorkoutProfile(w, Modifier.fillMaxWidth().height(36.dp).padding(top = 6.dp))
                         }
-                        WorkoutProfile(w, Modifier.fillMaxWidth().height(36.dp).padding(top = 6.dp))
                     }
                 }
             }

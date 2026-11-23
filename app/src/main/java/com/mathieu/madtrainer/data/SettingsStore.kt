@@ -43,6 +43,10 @@ data class Settings(
     val webRecent: List<String> = emptyList(),
     val webDesktop: Boolean = false,
     val webInSession: Boolean = false,
+    /** Twitch / YouTube : lecteur vidéo seul (sans chat ni page autour) au lieu de la page complète. */
+    val webVideoOnly: Boolean = true,
+    /** Plein écran vidéo + chiffres en séance : paysage (sinon portrait). */
+    val videoLandscape: Boolean = true,
 ) {
     val stravaConnected: Boolean get() = stravaRefresh.isNotBlank()
 }
@@ -78,6 +82,8 @@ class SettingsStore(context: Context) {
         webRecent = (prefs.getString("webRecent", "") ?: "").split("\n").filter { it.isNotBlank() },
         webDesktop = prefs.getBoolean("webDesktop", false),
         webInSession = prefs.getBoolean("webInSession", false),
+        webVideoOnly = prefs.getBoolean("webVideoOnly", true),
+        videoLandscape = prefs.getBoolean("videoLandscape", true),
         sport = runCatching { Sport.valueOf(prefs.getString("sport", "ELLIPTICAL")!!) }.getOrDefault(Sport.ELLIPTICAL),
     )
 
@@ -110,6 +116,8 @@ class SettingsStore(context: Context) {
             .putString("webRecent", s.webRecent.joinToString("\n"))
             .putBoolean("webDesktop", s.webDesktop)
             .putBoolean("webInSession", s.webInSession)
+            .putBoolean("webVideoOnly", s.webVideoOnly)
+            .putBoolean("videoLandscape", s.videoLandscape)
             .apply()
         _settings.value = s
     }

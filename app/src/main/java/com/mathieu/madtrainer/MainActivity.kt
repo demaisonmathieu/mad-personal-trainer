@@ -73,6 +73,8 @@ import com.mathieu.madtrainer.ui.SessionScreen
 import com.mathieu.madtrainer.ui.StrengthPlayerScreen
 import com.mathieu.madtrainer.ui.TodayScreen
 import com.mathieu.madtrainer.ui.UpdateBanner
+import com.mathieu.madtrainer.ui.VideoHost
+import com.mathieu.madtrainer.ui.VideoHudScreen
 import com.mathieu.madtrainer.ui.WebScreen
 import com.mathieu.madtrainer.ui.WeekScreen
 import com.mathieu.madtrainer.ui.WorkoutsScreen
@@ -91,6 +93,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MadTheme { AppRoot(vm) }
         }
+    }
+
+    override fun onDestroy() {
+        // Le lecteur vidéo survit à une recréation de l'activité, pas à la fermeture de l'appli
+        VideoHost.onActivityDestroyed(applicationContext, isFinishing)
+        super.onDestroy()
     }
 
     // Retour de l'autorisation Strava (madtrainer://localhost/strava?code=…)
@@ -141,6 +149,9 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
     val player by vm.player.collectAsStateWithLifecycle()
     if (player.session != null) {
         StrengthPlayerScreen(vm)
+    } else if (VideoHost.hud) {
+        // Plein écran vidéo + chiffres pendant une séance ou une course
+        VideoHudScreen(vm)
     } else {
     Scaffold(
         containerColor = Night.Bg,

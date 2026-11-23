@@ -138,64 +138,67 @@ fun RunScreen(vm: AppViewModel, onGoToSensors: () -> Unit) {
         if (run.finished) vm.selectRunWorkout(null)
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        StatusRow(run, hrState == ConnState.CONNECTED, onGoToSensors)
-        MusicWidget(vm)
-        WebMiniPanel(vm)
-        GpsHelp(run.gpsStatus, onAskPermission = { launcher.launch(runPermissions()) })
-        permError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    Column(Modifier.fillMaxSize()) {
+        // Vidéo fixée en haut : elle reste visible quand on fait défiler les chiffres
+        WebMiniPanel(vm, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
+        Column(
+            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            StatusRow(run, hrState == ConnState.CONNECTED, onGoToSensors)
+            MusicWidget(vm)
+            GpsHelp(run.gpsStatus, onAskPermission = { launcher.launch(runPermissions()) })
+            permError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-        when {
-            run.running -> RunningView(run, maxHr)
-            run.finished -> {
-                sessions.firstOrNull { it.sport == Sport.RUNNING }?.takeIf { System.currentTimeMillis() - it.startedAt < 6 * 3600_000 }
-                    ?.let {
-                        RouteMapCard(it.samples)
-                        RunSummary(it)
-                        ElevationCard(it)
-                        KmSplitsCard(it, maxHr)
-                        VmaCard(it, vm)
-                        SessionReportCard(it, vm)
-                    }
-                Button(onClick = { RunTracker.reset() }, modifier = Modifier.fillMaxWidth()) { Text("Nouvelle course") }
-            }
-            else -> {
-                val runWorkouts = workouts.filter { it.sport == Sport.RUNNING }
-                pending?.let { w ->
-                    SelectedWorkout(w, maxHr, onClear = { vm.selectRunWorkout(null) })
-                }
-                Button(
-                    onClick = {
-                        if (hasLocation()) {
-                            RunTracker.start(pending)
-                        } else {
-                            startAfterPermission = true
-                            launcher.launch(runPermissions())
+            when {
+                run.running -> RunningView(run, maxHr)
+                run.finished -> {
+                    sessions.firstOrNull { it.sport == Sport.RUNNING }?.takeIf { System.currentTimeMillis() - it.startedAt < 6 * 3600_000 }
+                        ?.let {
+                            RouteMapCard(it.samples)
+                            RunSummary(it)
+                            ElevationCard(it)
+                            KmSplitsCard(it, maxHr)
+                            VmaCard(it, vm)
+                            SessionReportCard(it, vm)
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) {
-                    Icon(Icons.Filled.PlayArrow, null)
-                    Text(if (pending == null) "  Démarrer une course libre" else "  Démarrer « ${pending?.name} »")
+                    Button(onClick = { RunTracker.reset() }, modifier = Modifier.fillMaxWidth()) { Text("Nouvelle course") }
                 }
+                else -> {
+                    val runWorkouts = workouts.filter { it.sport == Sport.RUNNING }
+                    pending?.let { w ->
+                        SelectedWorkout(w, maxHr, onClear = { vm.selectRunWorkout(null) })
+                    }
+                    Button(
+                        onClick = {
+                            if (hasLocation()) {
+                                RunTracker.start(pending)
+                            } else {
+                                startAfterPermission = true
+                                launcher.launch(runPermissions())
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, null)
+                        Text(if (pending == null) "  Démarrer une course libre" else "  Démarrer « ${pending?.name} »")
+                    }
 
-                if (pending == null && runWorkouts.isNotEmpty()) {
-                    SectionTitle("Ou choisis une séance guidée")
-                    runWorkouts.forEach { w ->
-                        Card(Modifier.fillMaxWidth().clickable { vm.selectRunWorkout(w) }) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(w.name, fontWeight = FontWeight.SemiBold)
-                                Text(workoutSummary(w), style = MaterialTheme.typography.bodySmall)
+                    if (pending == null && runWorkouts.isNotEmpty()) {
+                        SectionTitle("Ou choisis une séance guidée")
+                        runWorkouts.forEach { w ->
+                            Card(Modifier.fillMaxWidth().clickable { vm.selectRunWorkout(w) }) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(w.name, fontWeight = FontWeight.SemiBold)
+                                    Text(workoutSummary(w), style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
                     }
-                }
-                profile.vmaKmh?.let { v ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp)) { PaceTable(v, profile.vmaDate) }
+                    profile.vmaKmh?.let { v ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) { PaceTable(v, profile.vmaDate) }
+                        }
                     }
                 }
             }

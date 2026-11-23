@@ -118,16 +118,16 @@ object VideoHost {
                 }
 
                 override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                    canGoBack = view.canGoBack()
+                    VideoHost.canGoBack = view.canGoBack()
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
-                    canGoBack = view.canGoBack()
+                    VideoHost.canGoBack = view.canGoBack()
                 }
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
-                    progress = newProgress
+                    VideoHost.progress = newProgress
                 }
 
                 override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -135,12 +135,12 @@ object VideoHost {
                         callback.onCustomViewHidden()
                         return
                     }
-                    pageFullScreen = view
+                    VideoHost.pageFullScreen = view
                     hidePageFullScreen = { callback.onCustomViewHidden() }
                 }
 
                 override fun onHideCustomView() {
-                    pageFullScreen = null
+                    VideoHost.pageFullScreen = null
                     hidePageFullScreen = null
                 }
             }

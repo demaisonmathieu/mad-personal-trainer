@@ -64,8 +64,41 @@ class MealPlanTest {
     }
 
     @Test
+    fun weekStartsOnMonday() {
+        val saturday = java.time.LocalDate.of(2026, 11, 28).toEpochDay()
+        val monday = java.time.LocalDate.of(2026, 11, 23).toEpochDay()
+        assertEquals(monday, MealPlan.weekStart(saturday))
+        assertEquals(monday, MealPlan.weekStart(monday))
+    }
+
+    @Test
+    fun shoppingListAddsUpAndConvertsToRawWeight() {
+        val foods = MealPlan.foodsById(emptyList())
+        val week = listOf(
+            FoodEntry(1, "egg", MealSlot.BREAKFAST, 2.0, inUnits = true),
+            FoodEntry(2, "egg", MealSlot.BREAKFAST, 110.0), // 2 œufs saisis en grammes un autre jour
+            FoodEntry(3, "rice", MealSlot.LUNCH, 200.0),
+            FoodEntry(4, "rice", MealSlot.DINNER, 200.0),
+            FoodEntry(5, "olive_oil", MealSlot.LUNCH, 10.0, inUnits = false),
+        )
+        val list = MealPlan.shoppingList(week, foods)
+        assertEquals(listOf("egg", "rice", "olive_oil"), list.map { it.food.id }) // par rayon
+        val eggs = list[0]
+        assertEquals(220.0, eggs.plannedGrams, 0.01)
+        assertEquals(4, eggs.units)
+        assertEquals(2, eggs.uses)
+        val rice = list[1]
+        assertEquals(160.0, rice.buyGrams, 0.01) // 400 g cuit → 160 g sec
+        assertEquals("160 g sec", rice.label)
+        assertEquals(null, rice.units)
+        val text = MealPlan.shoppingText("Courses", list)
+        assertTrue(text.contains("PROTÉINES\n☐ Œuf : 4 × œuf"))
+        assertTrue(text.contains("☐ Riz blanc : 160 g sec"))
+    }
+
+    @Test
     fun catalogAndTemplatesAreConsistent() {
-        assertTrue(MealPlan.catalog.size >= 30)
+        assertTrue(MealPlan.catalog.size >= 100)
         assertEquals(MealPlan.catalog.size, MealPlan.catalog.map { it.id }.toSet().size)
         val foods = MealPlan.foodsById(emptyList())
         MealPlan.templates.forEach { tpl ->

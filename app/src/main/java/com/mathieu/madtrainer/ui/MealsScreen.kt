@@ -1,5 +1,6 @@
 package com.mathieu.madtrainer.ui
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -26,9 +27,12 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -60,9 +64,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -92,6 +98,7 @@ private val SlotColors = listOf(Color(0xFFFFB27A), Color(0xFF3DDC97), Color(0xFF
 private val dayFmt = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.FRANCE)
 
 /** Objectifs caloriques (Mifflin-St Jeor), planificateur de repas et tableau de bord du jour. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MealsScreen(vm: AppViewModel) {
     val state by MealPlanStore.state.collectAsStateWithLifecycle()
@@ -101,6 +108,10 @@ fun MealsScreen(vm: AppViewModel) {
     var day by rememberSaveable { mutableLongStateOf(today) }
     var addTo by remember { mutableStateOf<MealSlot?>(null) }
     var pendingTemplate by remember { mutableStateOf<MealPlan.Template?>(null) }
+    var view by rememberSaveable { mutableStateOf(MealView.DAY) }
+    var copyFrom by remember { mutableStateOf<Long?>(null) }
+    var weekTemplate by remember { mutableStateOf<MealPlan.Template?>(null) }
+    var confirmClearWeek by remember { mutableStateOf(false) }
 
     val lastWeight = BodyStats.latest(body.measures)?.weightKg
     val targets = MealPlanStore.targetsFor(state, profile, lastWeight)
@@ -109,64 +120,127 @@ fun MealsScreen(vm: AppViewModel) {
     val entries = MealPlanStore.entries(state, day)
     val eaten = MealPlan.total(entries, foods)
     val bySlot = MealPlan.bySlot(entries, foods)
+    val week = MealPlan.weekStart(day)
+    val weekDays = (0L..6L).map { week + it }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            ScreenHeader("Repas", eyebrow = "Objectifs, menus et suivi du jour")
+            ScreenHeader("Repas", eyebrow = "Objectifs, menus de la semaine et courses")
         }
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { day -= 1 }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Jour précédent") }
-                Text(
-                    when (day) {
-                        today -> "Aujourd'hui"
-                        today - 1 -> "Hier"
-                        today + 1 -> "Demain"
-                        else -> LocalDate.ofEpochDay(day).format(dayFmt).replaceFirstChar { it.uppercase() }
-                    },
-                    fontFamily = Display,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = { day += 1 }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Jour suivant") }
-            }
-        }
-        item { DashboardCard(goal, eaten, bySlot) }
-        item { TargetsCard(targets) { MealPlanStore.setTargets(it) } }
-        item {
-            Column {
-                Eyebrow("Journées types", modifier = Modifier.padding(top = 4.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                    items(MealPlan.templates) { tpl ->
-                        NightCard(Modifier.width(200.dp), onClick = { pendingTemplate = tpl }) {
-                            Text(tpl.name, fontWeight = FontWeight.SemiBold)
-                            Text(tpl.detail, style = MaterialTheme.typography.labelSmall, color = Night.Muted)
-                        }
-                    }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                MealView.entries.forEachIndexed { i, v ->
+                    SegmentedButton(
+                        selected = view == v,
+                        onClick = { view = v },
+                        shape = SegmentedButtonDefaults.itemShape(i, MealView.entries.size),
+                        icon = {},
+                    ) { Text(v.label, maxLines = 1) }
                 }
             }
         }
-        MealSlot.entries.forEachIndexed { i, slot ->
-            item(key = "slot-$slot") {
-                MealCard(
-                    slot = slot,
-                    color = SlotColors[i],
-                    entries = entries.filter { it.slot == slot },
-                    foods = foods,
-                    total = bySlot[slot] ?: Nutrients(),
-                    onAdd = { addTo = slot },
-                    onChange = { MealPlanStore.replace(day, it) },
-                    onRemove = { MealPlanStore.remove(day, it) },
-                )
+        when (view) {
+            MealView.DAY -> {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { day -= 1 }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Jour précédent") }
+                        Text(
+                            when (day) {
+                                today -> "Aujourd'hui"
+                                today - 1 -> "Hier"
+                                today + 1 -> "Demain"
+                                else -> LocalDate.ofEpochDay(day).format(dayFmt).replaceFirstChar { it.uppercase() }
+                            },
+                            fontFamily = Display,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { day += 1 }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Jour suivant") }
+                    }
+                }
+                item { DashboardCard(goal, eaten, bySlot) }
+                item { TargetsCard(targets) { MealPlanStore.setTargets(it) } }
+                item {
+                    Column {
+                        Eyebrow("Journées types", modifier = Modifier.padding(top = 4.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                            items(MealPlan.templates) { tpl ->
+                                NightCard(Modifier.width(200.dp), onClick = { pendingTemplate = tpl }) {
+                                    Text(tpl.name, fontWeight = FontWeight.SemiBold)
+                                    Text(tpl.detail, style = MaterialTheme.typography.labelSmall, color = Night.Muted)
+                                }
+                            }
+                        }
+                    }
+                }
+                MealSlot.entries.forEachIndexed { i, slot ->
+                    item(key = "slot-$slot") {
+                        MealCard(
+                            slot = slot,
+                            color = SlotColors[i],
+                            entries = entries.filter { it.slot == slot },
+                            foods = foods,
+                            total = bySlot[slot] ?: Nutrients(),
+                            onAdd = { addTo = slot },
+                            onChange = { MealPlanStore.replace(day, it) },
+                            onRemove = { MealPlanStore.remove(day, it) },
+                        )
+                    }
+                }
+                if (entries.isNotEmpty()) {
+                    item {
+                        TextButton(onClick = { MealPlanStore.clear(day) }) { Text("Vider la journée", color = Night.Bad) }
+                    }
+                }
             }
-        }
-        if (entries.isNotEmpty()) {
-            item {
-                TextButton(onClick = { MealPlanStore.clear(day) }) { Text("Vider la journée", color = Night.Bad) }
+            MealView.WEEK, MealView.SHOPPING -> {
+                item { WeekNavigator(week, today, onMove = { day += it * 7 }) }
+                if (view == MealView.WEEK) {
+                    item { WeekSummary(weekDays, state, foods, goal.kcal) }
+                    weekDays.forEach { d ->
+                        item(key = "day-$d") {
+                            WeekDayCard(
+                                day = d,
+                                today = today,
+                                eaten = MealPlan.total(MealPlanStore.entries(state, d), foods),
+                                goal = goal,
+                                onOpen = { day = d; view = MealView.DAY },
+                                onCopy = { copyFrom = d },
+                            )
+                        }
+                    }
+                    item {
+                        Column {
+                            Eyebrow("Remplir la semaine avec une journée type", modifier = Modifier.padding(top = 4.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                                items(MealPlan.templates) { tpl ->
+                                    NightCard(Modifier.width(200.dp), onClick = { weekTemplate = tpl }) {
+                                        Text(tpl.name, fontWeight = FontWeight.SemiBold)
+                                        Text(tpl.detail, style = MaterialTheme.typography.labelSmall, color = Night.Muted)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (weekDays.any { MealPlanStore.entries(state, it).isNotEmpty() }) {
+                        item {
+                            TextButton(onClick = { confirmClearWeek = true }) { Text("Vider la semaine", color = Night.Bad) }
+                        }
+                    }
+                } else {
+                    item {
+                        ShoppingList(
+                            week = week,
+                            today = today,
+                            state = state,
+                            foods = foods,
+                        )
+                    }
+                }
             }
         }
         item {
@@ -204,6 +278,250 @@ fun MealsScreen(vm: AppViewModel) {
             },
             dismissButton = { TextButton(onClick = { pendingTemplate = null }) { Text("Annuler") } },
         )
+    }
+    copyFrom?.let { from ->
+        CopyDayDialog(
+            from = from,
+            today = today,
+            onCopy = { targets -> MealPlanStore.copyDay(from, targets); copyFrom = null },
+            onDismiss = { copyFrom = null },
+        )
+    }
+    weekTemplate?.let { tpl ->
+        val kcal = goal.kcal.roundToInt()
+        AlertDialog(
+            onDismissRequest = { weekTemplate = null },
+            title = { Text("Semaine « ${tpl.name} »") },
+            text = { Text("Journée type ajustée à $kcal kcal, appliquée à chaque jour de la semaine du ${shortFmt.format(LocalDate.ofEpochDay(week))}.") },
+            confirmButton = {
+                TextButton(onClick = { MealPlanStore.applyTemplateToDays(weekDays, tpl, kcal, onlyEmpty = true); weekTemplate = null }) {
+                    Text("Jours vides")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { weekTemplate = null }) { Text("Annuler") }
+                    TextButton(onClick = { MealPlanStore.applyTemplateToDays(weekDays, tpl, kcal, onlyEmpty = false); weekTemplate = null }) {
+                        Text("Toute la semaine")
+                    }
+                }
+            },
+        )
+    }
+    if (confirmClearWeek) {
+        AlertDialog(
+            onDismissRequest = { confirmClearWeek = false },
+            title = { Text("Vider la semaine ?") },
+            text = { Text("Tous les repas du ${shortFmt.format(LocalDate.ofEpochDay(week))} au ${shortFmt.format(LocalDate.ofEpochDay(week + 6))} seront retirés.") },
+            confirmButton = {
+                TextButton(onClick = { MealPlanStore.clearDays(weekDays); confirmClearWeek = false }) { Text("Vider", color = Night.Bad) }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearWeek = false }) { Text("Annuler") } },
+        )
+    }
+}
+
+private enum class MealView(val label: String) { DAY("Jour"), WEEK("Semaine"), SHOPPING("Courses") }
+
+private val shortFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.FRANCE)
+
+// --- Semaine ---
+
+@Composable
+private fun WeekNavigator(week: Long, today: Long, onMove: (Int) -> Unit) {
+    val thisWeek = MealPlan.weekStart(today)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { onMove(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Semaine précédente") }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                when (week) {
+                    thisWeek -> "Cette semaine"
+                    thisWeek + 7 -> "Semaine prochaine"
+                    thisWeek - 7 -> "Semaine dernière"
+                    else -> "Semaine"
+                },
+                fontFamily = Display,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "du ${shortFmt.format(LocalDate.ofEpochDay(week))} au ${shortFmt.format(LocalDate.ofEpochDay(week + 6))}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Night.Muted,
+            )
+        }
+        IconButton(onClick = { onMove(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Semaine suivante") }
+    }
+}
+
+@Composable
+private fun WeekSummary(days: List<Long>, state: com.mathieu.madtrainer.data.MealPlanState, foods: Map<String, Food>, goalKcal: Double) {
+    val totals = days.map { MealPlan.total(MealPlanStore.entries(state, it), foods) }
+    val planned = totals.filter { it.kcal > 0 }
+    NightCard {
+        Eyebrow("Bilan de la semaine")
+        SummaryGrid(
+            buildList {
+                add("Jours prévus" to "${planned.size} / 7")
+                add("Moyenne" to if (planned.isEmpty()) "—" else "${planned.map { it.kcal }.average().roundToInt()} kcal")
+                add("Objectif" to "${goalKcal.roundToInt()} kcal")
+                if (planned.isNotEmpty()) {
+                    add("Protéines" to "${planned.map { it.protein }.average().roundToInt()} g/j")
+                    add("Glucides" to "${planned.map { it.carbs }.average().roundToInt()} g/j")
+                    add("Lipides" to "${planned.map { it.fat }.average().roundToInt()} g/j")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun WeekDayCard(day: Long, today: Long, eaten: Nutrients, goal: Nutrients, onOpen: () -> Unit, onCopy: () -> Unit) {
+    val date = LocalDate.ofEpochDay(day)
+    NightCard(highlight = day == today, onClick = onOpen) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(date.format(dayFmt).replaceFirstChar { it.uppercase() }, fontWeight = FontWeight.SemiBold)
+                if (eaten.kcal > 0) {
+                    Text(
+                        "${eaten.kcal.roundToInt()} / ${goal.kcal.roundToInt()} kcal · P ${eaten.protein.roundToInt()} · G ${eaten.carbs.roundToInt()} · L ${eaten.fat.roundToInt()}",
+                        style = MaterialTheme.typography.labelSmall.merge(NumberStyle),
+                        color = Night.Muted,
+                    )
+                } else {
+                    Text("Rien de prévu · toucher pour composer", style = MaterialTheme.typography.labelSmall, color = Night.Muted)
+                }
+            }
+            if (eaten.kcal > 0) {
+                IconButton(onClick = onCopy) { Icon(Icons.Filled.ContentCopy, "Copier ce jour", tint = Night.Muted) }
+            }
+        }
+        if (eaten.kcal > 0) {
+            val ratio = if (goal.kcal > 0) eaten.kcal / goal.kcal else 0.0
+            LinearProgressIndicator(
+                progress = { ratio.toFloat().coerceIn(0f, 1f) },
+                color = when {
+                    ratio > 1.1 -> Night.Bad
+                    ratio >= 0.9 -> Night.Good
+                    else -> Color(0xFFFFB020)
+                },
+                trackColor = Night.Line,
+                modifier = Modifier.fillMaxWidth().height(4.dp),
+            )
+        }
+    }
+}
+
+/** Choix des jours (cette semaine et la suivante) qui reçoivent une copie des repas de [from]. */
+@Composable
+private fun CopyDayDialog(from: Long, today: Long, onCopy: (List<Long>) -> Unit, onDismiss: () -> Unit) {
+    val start = MealPlan.weekStart(maxOf(from, today))
+    val candidates = (0L..13L).map { start + it }.filter { it != from }
+    var picked by remember { mutableStateOf(setOf<Long>()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Copier le ${shortFmt.format(LocalDate.ofEpochDay(from))}") },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                item {
+                    Text("Les repas des jours cochés seront remplacés.", style = MaterialTheme.typography.labelSmall, color = Night.Muted)
+                }
+                items(candidates) { d ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { picked = if (d in picked) picked - d else picked + d },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = d in picked, onCheckedChange = { picked = if (it) picked + d else picked - d })
+                        Text(LocalDate.ofEpochDay(d).format(dayFmt).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(enabled = picked.isNotEmpty(), onClick = { onCopy(picked.sorted()) }) { Text("Copier (${picked.size})") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
+// --- Courses ---
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShoppingList(week: Long, today: Long, state: com.mathieu.madtrainer.data.MealPlanState, foods: Map<String, Food>) {
+    val context = LocalContext.current
+    val containsToday = today in week..(week + 6)
+    var fromToday by rememberSaveable { mutableStateOf(true) }
+    val from = if (containsToday && fromToday) today else week
+    val items = MealPlan.shoppingList(MealPlanStore.entriesBetween(state, from, week + 6), foods)
+    val checked = state.shoppingChecked[week].orEmpty().toSet()
+    val period = "du ${shortFmt.format(LocalDate.ofEpochDay(from))} au ${shortFmt.format(LocalDate.ofEpochDay(week + 6))}"
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (containsToday) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = fromToday, onClick = { fromToday = true }, label = { Text("À partir d'aujourd'hui") })
+                FilterChip(selected = !fromToday, onClick = { fromToday = false }, label = { Text("Toute la semaine") })
+            }
+        }
+        if (items.isEmpty()) {
+            NightCard {
+                Text("Aucun repas prévu $period.", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Compose tes journées dans « Jour » ou remplis la semaine avec une journée type dans « Semaine » : la liste se calcule toute seule.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Night.Muted,
+                )
+            }
+        } else {
+            NightCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Eyebrow("Liste de courses")
+                        Text(
+                            "${items.size} articles · ${items.count { it.food.id in checked }} dans le panier",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Night.Muted,
+                        )
+                    }
+                    IconButton(onClick = {
+                        val text = MealPlan.shoppingText("Courses $period", items.filter { it.food.id !in checked })
+                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                        context.startActivity(Intent.createChooser(send, "Envoyer la liste"))
+                    }) { Icon(Icons.Filled.Share, "Partager la liste", tint = Night.Accent) }
+                }
+                items.groupBy { it.food.category }.forEach { (cat, list) ->
+                    HorizontalDivider(color = Night.Line)
+                    Text(cat.label, style = MaterialTheme.typography.labelLarge, color = Night.AccentText)
+                    list.sortedBy { it.food.id in checked }.forEach { item ->
+                        val done = item.food.id in checked
+                        Row(
+                            Modifier.fillMaxWidth().clickable { MealPlanStore.toggleShopping(week, item.food.id) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = done, onCheckedChange = { MealPlanStore.toggleShopping(week, item.food.id) })
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    item.shopName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (done) Night.Muted else Night.Text,
+                                    textDecoration = if (done) TextDecoration.LineThrough else null,
+                                )
+                                Text(
+                                    item.label + if (item.uses > 1) " · ${item.uses} repas" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Night.Muted,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (checked.isNotEmpty()) {
+                    TextButton(onClick = { MealPlanStore.resetShopping(week) }) { Text("Tout décocher") }
+                }
+            }
+            Text(
+                "Riz, pâtes, semoule et légumineuses en poids sec ; viandes, poissons et légumes à cuire en poids cru (pertes à la cuisson comprises).",
+                style = MaterialTheme.typography.labelSmall,
+                color = Night.Muted,
+            )
+        }
     }
 }
 
@@ -596,6 +914,7 @@ private fun QuantityField(e: FoodEntry, modifier: Modifier, onChange: (FoodEntry
 
 // --- Choix d'un aliment ---
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FoodPicker(
     slot: MealSlot,
@@ -608,9 +927,10 @@ private fun FoodPicker(
     var query by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf<FoodCategory?>(null) }
     var creating by remember { mutableStateOf(false) }
-    val all = customFoods + MealPlan.catalog
+    val collator = remember { java.text.Collator.getInstance(Locale.FRANCE).apply { strength = java.text.Collator.PRIMARY } }
+    val all = remember(customFoods) { customFoods + MealPlan.catalog.sortedWith { a, b -> collator.compare(a.name, b.name) } }
     val shown = all.filter { f ->
-        (category == null || f.category == category) && (query.isBlank() || f.name.contains(query.trim(), ignoreCase = true))
+        (category == null || f.category == category) && (query.isBlank() || matches(f.name, query))
     }
     if (creating) {
         CustomFoodDialog(onSave = { onCreate(it); creating = false }, onDismiss = { creating = false })
@@ -663,6 +983,13 @@ private fun FoodPicker(
         confirmButton = { TextButton(onClick = { creating = true }) { Text("Créer un aliment") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
     )
+}
+
+/** Recherche sans tenir compte de la casse ni des accents (« oeuf » trouve « Œuf », « epinard » trouve « Épinards »). */
+private fun matches(name: String, query: String): Boolean {
+    fun norm(s: String) = java.text.Normalizer.normalize(s.lowercase(Locale.FRANCE).replace("œ", "oe"), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+    return norm(name).contains(norm(query.trim()))
 }
 
 @OptIn(ExperimentalLayoutApi::class)

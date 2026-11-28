@@ -86,6 +86,42 @@ object MealPlanStore {
         editDay(day) { entries }
     }
 
+    /** Entrées des jours [from] à [to] inclus. */
+    fun entriesBetween(s: MealPlanState, from: Long, to: Long): List<FoodEntry> =
+        s.days.filter { it.epochDay in from..to }.flatMap { it.entries }
+
+    /** Copie les repas du jour [from] sur chacun des jours [targets] (remplace leur contenu). */
+    fun copyDay(from: Long, targets: List<Long>) = update { s ->
+        val source = entries(s, from)
+        var id = nextId(s)
+        val copies = targets.filter { it != from }.map { d -> MealDay(d, source.map { it.copy(id = id++) }) }
+        s.copy(days = s.days.filter { it.epochDay !in targets || it.epochDay == from } + copies)
+    }
+
+    /** Applique une journée type à plusieurs jours ; [onlyEmpty] laisse intacts les jours déjà remplis. */
+    fun applyTemplateToDays(targets: List<Long>, tpl: MealPlan.Template, targetKcal: Int, onlyEmpty: Boolean) = update { s ->
+        val foods = MealPlan.foodsById(s.customFoods)
+        var id = nextId(s)
+        val chosen = targets.filter { !onlyEmpty || entries(s, it).isEmpty() }
+        val filled = chosen.map { d ->
+            val list = MealPlan.applyTemplate(tpl, targetKcal, foods, id)
+            id += list.size
+            MealDay(d, list)
+        }
+        s.copy(days = s.days.filter { it.epochDay !in chosen } + filled)
+    }
+
+    fun clearDays(targets: List<Long>) = update { s -> s.copy(days = s.days.filter { it.epochDay !in targets }) }
+
+    /** Coche / décoche un aliment de la liste de courses de la semaine [weekStart] ; garde 8 semaines. */
+    fun toggleShopping(weekStart: Long, foodId: String) = update { s ->
+        val current = s.shoppingChecked[weekStart].orEmpty()
+        val next = if (foodId in current) current - foodId else current + foodId
+        s.copy(shoppingChecked = (s.shoppingChecked + (weekStart to next)).filterKeys { it > weekStart - 56 })
+    }
+
+    fun resetShopping(weekStart: Long) = update { s -> s.copy(shoppingChecked = s.shoppingChecked - weekStart) }
+
     fun addCustomFood(food: Food) = update { s -> s.copy(customFoods = s.customFoods.filter { it.id != food.id } + food) }
 
     /** Supprime un aliment perso et ses occurrences dans les repas. */

@@ -669,6 +669,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         MusicPlayer.init(app)
         // Hydratation : objectif recalculé selon le poids et le sport du jour, vérification périodique en arrière-plan
         HydrationStore.init(app)
+        com.mathieu.madtrainer.data.MealPlanStore.init(app)
         runCatching { HydrationReminder.schedule(app) }
         viewModelScope.launch {
             combine(repo.profile, repo.sessions) { p, sessions ->

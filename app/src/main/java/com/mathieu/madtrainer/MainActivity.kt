@@ -116,7 +116,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     ME("Moi", Icons.Filled.Person),
 }
 
-private enum class PlanSection(val label: String) { WEEK("Semaine"), WORKOUTS("Programmes"), COACH("Coach") }
+private enum class PlanSection(val label: String) { WEEK("Semaine"), WORKOUTS("Programmes"), COACH("Coach"), MEALS("Repas") }
 
 private enum class MeSection(val label: String) { HISTORY("Historique"), BODY("Corps"), SCREEN("Écran"), APP("Appli") }
 
@@ -313,6 +313,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                             )
                             PlanSection.WORKOUTS -> WorkoutsScreen(vm, onStart = { openSession() })
                             PlanSection.COACH -> CoachScreen(vm, onStartWorkout = { openSession() })
+                            PlanSection.MEALS -> com.mathieu.madtrainer.ui.MealsScreen(vm)
                         }
                     }
                 }

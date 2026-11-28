@@ -527,12 +527,41 @@ private fun ShoppingList(week: Long, today: Long, state: com.mathieu.madtrainer.
 
 // --- Tableau de bord ---
 
+/** Tableau de bord des repas du jour, pour l'accueil ; l'en-tête ouvre Plan › Repas. */
+@Composable
+fun TodayMealsCard(vm: AppViewModel, onOpen: () -> Unit) {
+    val state by MealPlanStore.state.collectAsStateWithLifecycle()
+    val profile by vm.repo.profile.collectAsStateWithLifecycle()
+    val body by vm.repo.body.collectAsStateWithLifecycle()
+    val today = LocalDate.now().toEpochDay()
+    val targets = MealPlanStore.targetsFor(state, profile, BodyStats.latest(body.measures)?.weightKg)
+    val foods = remember(state.customFoods) { MealPlan.foodsById(state.customFoods) }
+    val entries = MealPlanStore.entries(state, today)
+    DashboardCard(MealPlan.macroGrams(targets), MealPlan.total(entries, foods), MealPlan.bySlot(entries, foods)) {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onOpen), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Repas du jour", style = MaterialTheme.typography.titleSmall)
+                if (entries.isEmpty()) {
+                    Text("Rien de prévu aujourd'hui · toucher pour composer", style = MaterialTheme.typography.labelSmall, color = Night.Muted)
+                }
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir les repas", tint = Night.Muted)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DashboardCard(goal: Nutrients, eaten: Nutrients, bySlot: Map<MealSlot, Nutrients>) {
+private fun DashboardCard(
+    goal: Nutrients,
+    eaten: Nutrients,
+    bySlot: Map<MealSlot, Nutrients>,
+    header: (@Composable () -> Unit)? = null,
+) {
     var showRemaining by rememberSaveable { mutableStateOf(true) }
     var byMeal by rememberSaveable { mutableStateOf(false) }
     NightCard {
+        header?.invoke()
         Row(verticalAlignment = Alignment.CenterVertically) {
             CalorieGauge(goal.kcal, eaten.kcal, showRemaining, Modifier.size(150.dp).clickable { showRemaining = !showRemaining })
             Column(Modifier.padding(start = 16.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {

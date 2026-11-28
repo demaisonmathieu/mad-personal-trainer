@@ -256,6 +256,7 @@ private fun AppRoot(vm: AppViewModel = viewModel()) {
                         meSection = MeSection.HISTORY
                         tab = Tab.ME
                     },
+                    onOpenMeals = { openPlan(PlanSection.MEALS) },
                 )
 
                 Tab.TRAIN -> if (showDevices) {

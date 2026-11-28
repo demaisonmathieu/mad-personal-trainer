@@ -88,6 +88,7 @@ fun TodayScreen(
     onOpenStrength: () -> Unit,
     onOpenPlan: () -> Unit,
     onOpenSessionDetail: (String) -> Unit,
+    onOpenMeals: () -> Unit,
 ) {
     val plan by vm.repo.globalPlan.collectAsStateWithLifecycle()
     val workouts by vm.repo.workouts.collectAsStateWithLifecycle()
@@ -255,6 +256,9 @@ fun TodayScreen(
                 ) { Text("+${Hydration.GLASS_ML} ml", fontWeight = FontWeight.SemiBold) }
             }
         }
+
+        // Repas du jour : calories restantes, macros, répartition
+        TodayMealsCard(vm, onOpen = onOpenMeals)
 
         // Volume de la semaine et des 8 dernières
         NightCard {

@@ -97,6 +97,24 @@ class MealPlanTest {
     }
 
     @Test
+    fun templatesVaryFromDayToDay() {
+        val foods = MealPlan.foodsById(emptyList())
+        MealPlan.templates.forEach { tpl ->
+            val days = (0L until 7L).map { MealPlan.applyTemplate(tpl, 2300, foods, 1, variant = 20_000 + it) }
+            fun mainProtein(day: List<FoodEntry>, slot: MealSlot) =
+                day.first { it.slot == slot && foods.getValue(it.foodId).category == com.mathieu.madtrainer.data.FoodCategory.PROTEIN }.foodId
+            // Plat du midi différent chaque jour de la semaine, et différent de celui du soir
+            assertEquals(7, days.map { mainProtein(it, MealSlot.LUNCH) }.toSet().size)
+            days.forEach { assertTrue(mainProtein(it, MealSlot.LUNCH) != mainProtein(it, MealSlot.DINNER)) }
+            // Chaque déclinaison reste proche de l'apport visé
+            days.forEach { d ->
+                val kcal = MealPlan.total(d, foods).kcal
+                assertTrue("${tpl.name} : $kcal kcal", kcal in 1950.0..2650.0)
+            }
+        }
+    }
+
+    @Test
     fun catalogAndTemplatesAreConsistent() {
         assertTrue(MealPlan.catalog.size >= 100)
         assertEquals(MealPlan.catalog.size, MealPlan.catalog.map { it.id }.toSet().size)

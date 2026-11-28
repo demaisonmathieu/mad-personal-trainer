@@ -419,11 +419,56 @@ object MealPlan {
     )
 
     /**
+     * Familles d'aliments interchangeables pour varier les journées types. [byProtein] : la quantité de remplacement
+     * garde les mêmes protéines (plats principaux), sinon les mêmes calories.
+     */
+    private class Pool(val slots: Set<MealSlot>, val ids: List<String>, val byProtein: Boolean = false)
+
+    private val mains = setOf(MealSlot.LUNCH, MealSlot.DINNER)
+    private val morningAndSnack = setOf(MealSlot.BREAKFAST, MealSlot.SNACK)
+
+    private val pools = listOf(
+        Pool(
+            mains,
+            listOf("chicken", "white_fish", "beef5", "salmon", "turkey", "tuna", "pork_loin", "cod", "chicken_thigh", "shrimp", "rumsteak"),
+            byProtein = true,
+        ),
+        Pool(mains, listOf("rice", "potato", "pasta", "quinoa", "lentils", "semolina", "sweet_potato", "wholewheat_pasta", "chickpeas", "brown_rice")),
+        Pool(mains, listOf("broccoli", "carrot", "green_beans", "ratatouille", "zucchini", "spinach", "cauliflower", "pepper", "mushrooms")),
+        Pool(mains, listOf("salad", "tomato", "cucumber")),
+        Pool(mains, listOf("yogurt", "fromage_blanc", "skyr", "greek_yogurt", "compote")),
+        Pool(MealSlot.entries.toSet(), listOf("apple", "banana", "kiwi", "orange", "pear", "clementine", "berries", "strawberries", "grapes", "mango")),
+        Pool(morningAndSnack, listOf("skyr", "fromage_blanc", "greek_yogurt", "cottage", "fromage_blanc0")),
+        Pool(morningAndSnack, listOf("oats", "muesli")),
+        Pool(morningAndSnack, listOf("bread", "sandwich_bread", "baguette")),
+        Pool(morningAndSnack, listOf("almonds", "walnuts", "cashews")),
+    )
+
+    /**
+     * Journée type déclinée pour la variante [variant] (le jour, en pratique) : chaque aliment d'une famille est
+     * remplacé par le suivant de [variant] crans. Deux aliments différents d'une même famille dans un même jour
+     * restent différents (même décalage). Variante 0 = journée type d'origine.
+     */
+    fun vary(tpl: Template, variant: Long, foods: Map<String, Food>): List<Triple<MealSlot, String, Double>> =
+        tpl.items.map { item ->
+            val (slot, id, grams) = item
+            val pool = pools.firstOrNull { slot in it.slots && id in it.ids } ?: return@map item
+            val idx = pool.ids.indexOf(id)
+            val newId = pool.ids[Math.floorMod(idx + variant, pool.ids.size.toLong()).toInt()]
+            val old = foods[id]
+            val new = foods[newId]
+            if (newId == id || old == null || new == null) return@map item
+            // Portion recalculée, mais jamais plus de 30 % au-dessus ou 25 % en dessous de celle d'origine
+            val ratio = (if (pool.byProtein) old.protein / new.protein else old.kcal / new.kcal).coerceIn(0.75, 1.3)
+            Triple(slot, newId, grams * ratio)
+        }
+
+    /**
      * Entrées d'une journée type, quantités mises à l'échelle pour approcher [targetKcal] (facteur 0,6 à 1,8,
      * arrondi à 5 g ; les aliments comptés à l'unité sont repassés en unités par demi-unité).
      */
-    fun applyTemplate(tpl: Template, targetKcal: Int, foods: Map<String, Food>, firstId: Long): List<FoodEntry> {
-        val raw = tpl.items.mapIndexedNotNull { i, (slot, id, g) ->
+    fun applyTemplate(tpl: Template, targetKcal: Int, foods: Map<String, Food>, firstId: Long, variant: Long = 0): List<FoodEntry> {
+        val raw = vary(tpl, variant, foods).mapIndexedNotNull { i, (slot, id, g) ->
             foods[id]?.let { FoodEntry(firstId + i, id, slot, g) }
         }
         val base = total(raw, foods).kcal

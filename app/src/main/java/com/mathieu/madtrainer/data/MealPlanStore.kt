@@ -82,7 +82,7 @@ object MealPlanStore {
 
     fun applyTemplate(day: Long, tpl: MealPlan.Template, targetKcal: Int) {
         val s = _state.value
-        val entries = MealPlan.applyTemplate(tpl, targetKcal, MealPlan.foodsById(s.customFoods), nextId(s))
+        val entries = MealPlan.applyTemplate(tpl, targetKcal, MealPlan.foodsById(s.customFoods), nextId(s), variant = day)
         editDay(day) { entries }
     }
 
@@ -104,7 +104,7 @@ object MealPlanStore {
         var id = nextId(s)
         val chosen = targets.filter { !onlyEmpty || entries(s, it).isEmpty() }
         val filled = chosen.map { d ->
-            val list = MealPlan.applyTemplate(tpl, targetKcal, foods, id)
+            val list = MealPlan.applyTemplate(tpl, targetKcal, foods, id, variant = d)
             id += list.size
             MealDay(d, list)
         }
